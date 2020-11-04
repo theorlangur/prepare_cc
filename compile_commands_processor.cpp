@@ -43,23 +43,23 @@ nlohmann::json internProcessCompileCommands(fs::path compile_commands_json, json
     return res;
 }
 
-void PrepareForClangD(nlohmann::json &obj, fs::path target) 
+void PrepareForClangD(nlohmann::json &obj, fs::path target, bool cl) 
 {
     auto headerBlocks = generateHeaderBlocksForBlockFile(target);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
-      std::string inc_stdafx("--include=");
+      std::string inc_stdafx(cl ? "/clang:--include " : "--include=");
       inc_stdafx += headerBlocks->target.string();
 
-      std::string inc_before("--include=");
+      std::string inc_before(cl ? "/clang:--include " : "--include=");
       inc_before += headerBlocks->include_before.string();
 
-      std::string inc_after("--include=");
+      std::string inc_after(cl ? "/clang:--include " : "--include=");
       inc_after += headerBlocks->include_after.string();
 
       nlohmann::json deps;
       auto inc = getNthRelativeInclude(target, 2);
-      if (inc.has_value() && inc->file.extension() == ".cpp") 
+      if (inc.has_value() && (inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) 
       {
         nlohmann::json cpp_dep;
         cpp_dep["file"] = inc->file.string();
@@ -68,8 +68,10 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target)
       }
 
         nlohmann::json rem_c;
-        rem_c.push_back("1:-c"); // remove compile target of the original
-                                 // command
+        if (!cl)
+			rem_c.push_back("1:-c"); // remove compile target of the original command
+        else
+			rem_c.push_back("1:/bigobj"); // remove compile target of the original command
         fs::path dir_stdafx = headerBlocks->target;
         dir_stdafx.remove_filename();
 
@@ -78,12 +80,17 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target)
           if (!rel.empty() && (*rel.begin() == ".."))
             continue;
           nlohmann::json h_dep;
-          h_dep["file"] = h.header;
+          h_dep["file"] = h.header.string();
           h_dep["remove"] = rem_c;
           nlohmann::json add_args;
-          std::string def("-D");
+          std::string def(cl ? "/D " : "-D");
           def += h.define;
           add_args.push_back(def);
+
+          if (cl)
+          {
+              add_args.push_back("/TP");//compile as C++
+          }
 
           add_args.push_back(inc_before);
           add_args.push_back(inc_stdafx);
@@ -98,23 +105,23 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target)
     }
 }
 
-void PrepareForCcls(nlohmann::json &obj, fs::path target) 
+void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl) 
 {
     auto headerBlocks = generateHeaderBlocksForBlockFile(target);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
-      std::string inc_stdafx("--include=");
+      std::string inc_stdafx(cl ? "/clang:--include " : "--include=");
       inc_stdafx += headerBlocks->target.string();
 
-      std::string inc_before("--include=");
+      std::string inc_before(cl ? "/clang:--include " : "--include=");
       inc_before += headerBlocks->include_before.string();
 
-      std::string inc_after("--include=");
+      std::string inc_after(cl ? "/clang:--include " : "--include=");
       inc_after += headerBlocks->include_after.string();
 
       nlohmann::json deps;
       auto inc = getNthRelativeInclude(target, 2);
-      if (inc.has_value() && inc->file.extension() == ".cpp") 
+      if (inc.has_value() && (inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) 
       {
         nlohmann::json cpp_dep;
         cpp_dep["file"] = inc->file.string();
@@ -123,8 +130,10 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target)
       }
 
         nlohmann::json rem_c;
-        rem_c.push_back("1:-c"); // remove compile target of the original
-                                 // command
+        if (!cl)
+			rem_c.push_back("1:-c"); // remove compile target of the original command
+        else
+			rem_c.push_back("1:/bigobj"); // remove compile target of the original command
         fs::path dir_stdafx = headerBlocks->target;
         dir_stdafx.remove_filename();
 
@@ -133,12 +142,18 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target)
           if (!rel.empty() && (*rel.begin() == ".."))
             continue;
           nlohmann::json h_dep;
-          h_dep["file"] = h.header;
+          h_dep["file"] = h.header.string();
           h_dep["remove"] = rem_c;
           nlohmann::json add_args;
-          add_args.push_back("-c");
-          add_args.push_back(headerBlocks->dummy_cpp);
-          std::string def("-D");
+          if (cl)
+          {
+              add_args.push_back("/TP"); //compile as C++
+			  add_args.push_back("/bigobj");
+          }
+          else
+			  add_args.push_back("-c");
+          add_args.push_back(headerBlocks->dummy_cpp.string());
+          std::string def(cl ? "/D " : "-D");
           def += h.define;
           add_args.push_back(def);
 
@@ -181,9 +196,9 @@ bool processCompileCommandsTo(CCOptions const& options)
         seen_paths.insert(d);
 
         if (options.t == IndexerType::CCLS)
-          PrepareForCcls(entry, file);
+          PrepareForCcls(entry, file, options.clang_cl);
         else if (options.t == IndexerType::ClangD)
-          PrepareForClangD(entry, file);
+          PrepareForClangD(entry, file, options.clang_cl);
 
          return true;
     });
@@ -228,10 +243,12 @@ bool CCOptions::from_json_file(fs::path config_json)
       if (cfg.is_object())
       {
         for (auto const &e : cfg.items()) {
-          if (e.key() == "from" && e.value().is_string())
-            compile_commands_json = e.value().get<std::string>();
-          else if (e.key() == "to" && e.value().is_string())
-            save_to = e.value().get<std::string>();
+            if (e.key() == "from" && e.value().is_string())
+                compile_commands_json = e.value().get<std::string>();
+            else if (e.key() == "to" && e.value().is_string())
+                save_to = e.value().get<std::string>();
+            else if (e.key() == "clang-cl" && e.value().is_boolean())
+                clang_cl = e.value().get<bool>();
           else if (e.key() == "type" && e.value().is_string())
           {
             if (e.value() == "clangd") t = IndexerType::ClangD;
@@ -240,12 +257,12 @@ bool CCOptions::from_json_file(fs::path config_json)
           else if (e.key() == "filter-in" && e.value().is_array())
           {
             for(auto const& fin : e.value())
-              filter_in.push_back(fin.get<std::string>());
+				filter_in.push_back(fin.get<std::string>());
           }
           else if (e.key() == "filter-out" && e.value().is_array())
           {
-            for(auto const& fout : e.value())
-              filter_out.push_back(fout.get<std::string>());
+				for (auto const& fout : e.value())
+					filter_out.push_back(fout.get<std::string>());
           }else if (e.key() == "cmd-modifiers" && e.value().is_array())
           {
             for(auto const& fout : e.value())

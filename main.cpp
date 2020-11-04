@@ -60,6 +60,8 @@ int main(int argc, char *argv[])
             print_help = true;
         } else if (arg == "--help")
           print_help = true;
+        else if (arg == "--clang-cl")
+          opts.clang_cl = true;
       }
     }
     catch(const std::exception &e)
@@ -84,7 +86,7 @@ int main(int argc, char *argv[])
 
     if (print_help)
     {
-      std::cout << "Usage: prepare_cc --config <path-to-json-config-file> --from <path-to-compile_commands.json> [--to <path-to-output-file>] [--filter-in <path-to-process-commands>] [--filter-out <path-to-process-commands>] [--type <ccls|clangd>] [--help]\n";
+      std::cout << "Usage: prepare_cc --config <path-to-json-config-file> --from <path-to-compile_commands.json> [--to <path-to-output-file>] [--clang-cl] [--filter-in <path-to-process-commands>] [--filter-out <path-to-process-commands>] [--type <ccls|clangd>] [--help]\n";
       return 0;
     }
 
