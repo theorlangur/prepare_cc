@@ -48,13 +48,13 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, bool cl)
     auto headerBlocks = generateHeaderBlocksForBlockFile(target);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
-      std::string inc_stdafx(cl ? "/clang:--include " : "--include=");
+      std::string inc_stdafx(cl ? "/clang:--include" : "--include=");
       inc_stdafx += headerBlocks->target.string();
 
-      std::string inc_before(cl ? "/clang:--include " : "--include=");
+      std::string inc_before(cl ? "/clang:--include" : "--include=");
       inc_before += headerBlocks->include_before.string();
 
-      std::string inc_after(cl ? "/clang:--include " : "--include=");
+      std::string inc_after(cl ? "/clang:--include" : "--include=");
       inc_after += headerBlocks->include_after.string();
 
       nlohmann::json deps;
@@ -105,18 +105,25 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, bool cl)
     }
 }
 
+std::string convert_separators(std::string in, bool convert)
+{
+  if (convert)
+    std::replace(in.begin(), in.end(), '\\', '/');
+  return in;
+}
+
 void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl) 
 {
     auto headerBlocks = generateHeaderBlocksForBlockFile(target);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
-      std::string inc_stdafx(cl ? "/clang:--include " : "--include=");
+      std::string inc_stdafx(cl ? "/clang:--include" : "--include=");
       inc_stdafx += headerBlocks->target.string();
 
-      std::string inc_before(cl ? "/clang:--include " : "--include=");
+      std::string inc_before(cl ? "/clang:--include" : "--include=");
       inc_before += headerBlocks->include_before.string();
 
-      std::string inc_after(cl ? "/clang:--include " : "--include=");
+      std::string inc_after(cl ? "/clang:--include" : "--include=");
       inc_after += headerBlocks->include_after.string();
 
       nlohmann::json deps;
@@ -124,7 +131,7 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl)
       if (inc.has_value() && (inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) 
       {
         nlohmann::json cpp_dep;
-        cpp_dep["file"] = inc->file.string();
+        cpp_dep["file"] = convert_separators(inc->file.string(), cl);
         cpp_dep["add"].push_back(inc_stdafx);
         deps.push_back(cpp_dep);
       }
@@ -142,7 +149,7 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl)
           if (!rel.empty() && (*rel.begin() == ".."))
             continue;
           nlohmann::json h_dep;
-          h_dep["file"] = h.header.string();
+          h_dep["file"] = convert_separators(h.header.string(), cl);
           h_dep["remove"] = rem_c;
           nlohmann::json add_args;
           if (cl)

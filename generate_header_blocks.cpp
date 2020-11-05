@@ -34,10 +34,13 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
           h.define = i->guard + "_INCLUDE";
 
           _before << '#' << directive << " defined(" << h.define << ")\n";
-          for(auto j = i; j != includes.end(); ++j)
+          _before << "#ifndef INCLUDE_AFTER_WITHOUT_TARGET\n";
+          _before << "#define " << i->guard << "\n";
+          _before << "#endif\n";
+          for(auto j = i + 1; j != includes.end(); ++j)
               _before << "#define " << j->guard << "\n";
 
-          _after << '#' << directive << " defined(" << h.define << ")\n";
+          _after << '#' << directive << " defined(" << h.define << ") && !defined(INCLUDE_AFTER_WITHOUT_TARGET)\n";
           _after << "#undef " << i->guard << "\n";
 
           res.headers.push_back(std::move(h));
