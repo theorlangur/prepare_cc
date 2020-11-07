@@ -185,6 +185,7 @@ bool processCompileCommandsTo(CCOptions const& options)
     std::set<fs::path> seen_paths;
     nlohmann::json res = internProcessCompileCommands(options.compile_commands_json,
      [&](nlohmann::json &entry, fs::path file)->bool{
+            file = file.lexically_normal();
          if (options.is_filtered_out(file))
             return false;
 
@@ -240,8 +241,11 @@ std::string CCOptions::modify_command(std::string cmd) const {
   return std::move(cmd);
 }
 
-bool CCOptions::from_json_file(fs::path config_json) 
+bool CCOptions::from_json_file(fs::path config_json, const fs::path &base) 
 {
+    if (!base.empty() && !base.is_absolute())
+        throw std::runtime_error("Base directory must be absolute");
+
     nlohmann::json cfg;
     std::ifstream _f(config_json);
     if (_f)
@@ -251,9 +255,17 @@ bool CCOptions::from_json_file(fs::path config_json)
       {
         for (auto const &e : cfg.items()) {
             if (e.key() == "from" && e.value().is_string())
+            {
                 compile_commands_json = e.value().get<std::string>();
+                if (compile_commands_json.is_relative())
+                    compile_commands_json = base / compile_commands_json;
+            }
             else if (e.key() == "to" && e.value().is_string())
+            {
                 save_to = e.value().get<std::string>();
+                if (save_to.is_relative())
+                    save_to = base / save_to;
+            }
             else if (e.key() == "clang-cl" && e.value().is_boolean())
                 clang_cl = e.value().get<bool>();
           else if (e.key() == "type" && e.value().is_string())
@@ -263,13 +275,25 @@ bool CCOptions::from_json_file(fs::path config_json)
           }
           else if (e.key() == "filter-in" && e.value().is_array())
           {
-            for(auto const& fin : e.value())
-				filter_in.push_back(fin.get<std::string>());
+                for (auto const& fin : e.value())
+                {
+                    fs::path fin_p = fin.get<std::string>();
+                    if (fin_p.is_relative())
+                        fin_p = base / fin_p;
+                    fin_p = fin_p.lexically_normal();
+					filter_in.push_back(fin_p);
+				}
           }
           else if (e.key() == "filter-out" && e.value().is_array())
           {
-				for (auto const& fout : e.value())
-					filter_out.push_back(fout.get<std::string>());
+                for (auto const& fout : e.value())
+                {
+                    fs::path fout_p = fout.get<std::string>();
+                    if (fout_p.is_relative())
+                        fout_p = base / fout_p;
+                    fout_p = fout_p.lexically_normal();
+					filter_out.push_back(fout_p);
+                }
           }else if (e.key() == "cmd-modifiers" && e.value().is_array())
           {
             for(auto const& fout : e.value())

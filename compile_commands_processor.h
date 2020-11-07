@@ -31,7 +31,7 @@ struct CCOptions
   bool is_filtered_in(fs::path const& f) const;
   bool is_filtered_out(fs::path const& f) const;
   std::string modify_command(std::string cmd) const;
-  bool from_json_file(fs::path config_json);
+  bool from_json_file(fs::path config_json, const fs::path &base);
 };
 
 bool processCompileCommandsTo(CCOptions const& options);

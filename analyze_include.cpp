@@ -27,7 +27,7 @@ std::optional<std::string_view> matchIfndefDirective(std::string_view sv)
 
   auto first = not_space(sv.begin());
   if (first != sv.end()) {
-    if (sv.size() < sizeof("#ifndef") || ((*first != '#') && (*first != '/') && (*(first + 1) != '/')))
+    if (sv.size() < sizeof("#ifndef") || ((*first != '#') && (*first != '/') && ((first + 1) == sv.end() || *(first + 1) != '/')))
       return {};
     ++first;
     if (*first == '/')
