@@ -36,4 +36,6 @@ struct CCOptions
 
 bool processCompileCommandsTo(CCOptions const& options);
 
+bool is_in_dir(fs::path const& parent, fs::path const& child);
+
 #endif

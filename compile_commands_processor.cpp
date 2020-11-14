@@ -8,6 +8,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include "json.hpp"
 
 #include "analyze_include.h"
@@ -76,8 +77,7 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, bool cl)
         dir_stdafx.remove_filename();
 
         for (auto &h : headerBlocks->headers) {
-          fs::path rel = h.header.lexically_relative(dir_stdafx);
-          if (!rel.empty() && (*rel.begin() == ".."))
+          if (!is_in_dir(dir_stdafx, h.header))
             continue;
           nlohmann::json h_dep;
           h_dep["file"] = h.header.string();
@@ -145,8 +145,7 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl)
         dir_stdafx.remove_filename();
 
         for (auto &h : headerBlocks->headers) {
-          fs::path rel = h.header.lexically_relative(dir_stdafx);
-          if (!rel.empty() && (*rel.begin() == ".."))
+          if (!is_in_dir(dir_stdafx, h.header))
             continue;
           nlohmann::json h_dep;
           h_dep["file"] = convert_separators(h.header.string(), cl);
@@ -221,7 +220,7 @@ bool CCOptions::is_filtered_in(fs::path const &f) const {
   if (filter_in.empty())
     return true;
   for (fs::path const &d : filter_in)
-    if (*f.lexically_relative(d).begin() != "..")
+    if (is_in_dir(d, f))
       return true;
   return false;
 }
@@ -230,7 +229,7 @@ bool CCOptions::is_filtered_out(fs::path const &f) const {
   if (filter_out.empty())
     return false;
   for (fs::path const &d : filter_out)
-    if (*f.lexically_relative(d).begin() != "..")
+    if (is_in_dir(d, f))
       return true;
   return false;
 }
@@ -317,4 +316,26 @@ bool CCOptions::from_json_file(fs::path config_json, const fs::path &base)
       }
     }
   return false;
+}
+
+bool is_in_dir(fs::path const& parent, fs::path const& child)
+{
+  if (!parent.is_absolute() || !child.is_absolute())
+    throw std::runtime_error("is_in_dir supports only absolute paths");
+  auto pIt = parent.begin();
+  auto pEnd = parent.end();
+
+  auto cIt = child.begin();
+  auto cEnd = child.end();
+
+  fs::path builtChild;
+  while(pIt != pEnd && cIt != cEnd)
+  {
+    builtChild /= *cIt;
+    ++pIt;
+    ++cIt;
+  }
+  std::error_code err;
+
+  return fs::equivalent(parent, builtChild, err);
 }
