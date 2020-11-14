@@ -1,7 +1,9 @@
 #include "analyze_include.h"
+#include "compile_commands_processor.h"
 
 #include <cctype>
 #include <fstream>
+#include <ios>
 #include <string_view>
 #include <algorithm>
 #include <iostream>
@@ -124,21 +126,76 @@ std::optional<std::string> getHeaderGuard(fs::path h)
 IncludeList getAllRelativeIncludes(fs::path h)
 {
     IncludeList res;
-    fs::path d = h;
-    d.remove_filename();
-    int line_num = 0;
-    std::ifstream f(h, std::ios_base::in);
-    char line[2048];
-    bool first = true;
-    while(f.getline(line, sizeof(line)))
+    IncludeIterator ii(h);
+    for (const Include &i : ii) {
+      if (!i.guard.empty())
+        res.emplace_back(i);
+      else
+        std::cout << "inc (no guard): " << i.file << "\n";
+    }
+    return res;
+}
+
+
+std::optional<Include> getNthRelativeInclude(fs::path h, int n)
+{
+  std::optional<Include> res;
+  IncludeIterator ii(h);
+  for(const Include& i : ii)
+  {
+    if (!--n)
+      return i;
+  }
+  return {};
+}
+
+std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& close_to, int skip)
+{
+  int minDist = 0;
+  std::optional<Include> res;
+  IncludeIterator ii(h);
+  for(const Include& i : ii)
+  {
+    if ((--skip) >= 0)
+      continue;
+    fs::path f = i.file;
+    f.remove_filename();
+    fs::path::iterator fIt;
+    if (is_in_dir(close_to, f, fIt))
     {
-        const char *pLine = line;
-        if (first)
+      //calculate 'distance'
+      int dist = 0;
+      for(; fIt != f.end(); ++fIt,++dist);
+      if (!res || (dist < minDist))
+      {
+        res = i;
+        minDist = dist;
+      }
+    }
+  }
+  return res;
+}
+
+  IncludeIterator::IncludeIterator(fs::path t):
+    m_TargetDir(t),
+    m_File(t, std::ios_base::in)
+  {
+    m_TargetDir.remove_filename();
+  }
+
+  bool IncludeIterator::next()
+  {
+    if(m_File.getline(m_Buffer, sizeof(m_Buffer)))
+    {
+        const char *pLine = m_Buffer;
+        if (m_First)
         {
-          first = false;
+          m_First = false;
           if ((uint8_t)pLine[0] == 0xef && (uint8_t)pLine[1] == 0xbb && (uint8_t)pLine[2] == 0xbf)
             pLine += 3;
         }
+
+        bool res = false;
         std::string_view sv(pLine);
         auto inc = matchIncludeDirective(sv);
         if (inc.has_value())
@@ -146,60 +203,47 @@ IncludeList getAllRelativeIncludes(fs::path h)
             auto inc_str = *inc;
             fs::path inc_path = inc_str;
             if (inc_path.is_relative()) {
-              inc_path = d;
+              inc_path = m_TargetDir;
               inc_path += inc_str;
               inc_path = inc_path.lexically_normal();
-            }
-            auto guard = getHeaderGuard(inc_path);
-            if (guard.has_value())
-                res.emplace_back(line_num, std::move(*guard), std::move(inc_path));
-            else
-              std::cout << "inc (no guard): " << inc_path << "\n";
-        }
-        ++line_num;
-    }
-    return res;
-}
-
-std::optional<Include> getNthRelativeInclude(fs::path h, int n)
-{
-    fs::path d = h;
-    d.remove_filename();
-    int line_num = 0;
-    std::ifstream f(h, std::ios_base::in);
-    char line[2048];
-    bool first = true;
-    while(f.getline(line, sizeof(line)))
-    {
-        const char *pLine = line;
-        if (first)
-        {
-          first = false;
-          if ((uint8_t)pLine[0] == 0xef && (uint8_t)pLine[1] == 0xbb && (uint8_t)pLine[2] == 0xbf)
-            pLine += 3;
-        }
-        std::string_view sv(pLine);
-        auto inc = matchIncludeDirective(sv);
-        if (inc.has_value())
-        {
-            --n;
-            auto inc_str = *inc;
-            fs::path inc_path = inc_str;
-	    if (inc_path.is_relative())
-            {
-		    inc_path = d;
-		    inc_path += inc_str;
-		    inc_path = inc_path.lexically_normal();
             }
             auto guard = getHeaderGuard(inc_path);
             std::string _g;
             if (guard.has_value())
                 _g = std::move(*guard);
 
-            if (!n)
-              return Include(line_num, std::move(_g), std::move(inc_path));
+            m_Include = Include(m_Line, std::move(_g), std::move(inc_path));
+            res = true;
         }
-        ++line_num;
-    }
-    return {};
-}
+        ++m_Line;
+        return res;
+    }else
+      m_Finished = true;
+
+    return false;
+  }
+
+  bool IncludeIterator::at_end() const
+  {
+    return m_Finished;
+  }
+
+  const Include& IncludeIterator::getInclude() const
+  {
+    return m_Include;
+  }
+
+  void IncludeIterator::Iter::operator++()
+  {
+    while(!i.at_end() && !i.next());
+  }
+
+  const Include &IncludeIterator::Iter::operator*()
+  {
+    return i.getInclude();
+  }
+
+  bool IncludeIterator::Iter::operator!=(Stop)
+  {
+    return !i.at_end();
+  }

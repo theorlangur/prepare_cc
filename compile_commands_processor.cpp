@@ -58,8 +58,11 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, bool cl)
       std::string inc_after(cl ? "/clang:--include" : "--include=");
       inc_after += headerBlocks->include_after.string();
 
+      fs::path dir_stdafx = headerBlocks->target;
+      dir_stdafx.remove_filename();
+
       nlohmann::json deps;
-      auto inc = getNthRelativeInclude(target, 2);
+      auto inc = findClosestRelativeInclude(target, dir_stdafx, 1);
       if (inc.has_value() && (inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) 
       {
         nlohmann::json cpp_dep;
@@ -73,8 +76,6 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, bool cl)
 			rem_c.push_back("1:-c"); // remove compile target of the original command
         else
 			rem_c.push_back("1:/bigobj"); // remove compile target of the original command
-        fs::path dir_stdafx = headerBlocks->target;
-        dir_stdafx.remove_filename();
 
         for (auto &h : headerBlocks->headers) {
           if (!is_in_dir(dir_stdafx, h.header))
@@ -126,10 +127,13 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl)
       std::string inc_after(cl ? "/clang:--include" : "--include=");
       inc_after += headerBlocks->include_after.string();
 
+      fs::path dir_stdafx = headerBlocks->target;
+      dir_stdafx.remove_filename();
+
       nlohmann::json deps;
-      auto inc = getNthRelativeInclude(target, 2);
-      if (inc.has_value() && (inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) 
-      {
+      auto inc = findClosestRelativeInclude(target, dir_stdafx, 1);
+      if (inc.has_value() && (inc->file.extension() == ".cpp" ||
+                              inc->file.extension() == ".CPP")) {
         nlohmann::json cpp_dep;
         cpp_dep["file"] = convert_separators(inc->file.string(), cl);
         cpp_dep["add"].push_back(inc_stdafx);
@@ -138,12 +142,11 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl)
 
         nlohmann::json rem_c;
         if (!cl)
-			rem_c.push_back("1:-c"); // remove compile target of the original command
+          rem_c.push_back(
+              "1:-c"); // remove compile target of the original command
         else
-			rem_c.push_back("1:/bigobj"); // remove compile target of the original command
-        fs::path dir_stdafx = headerBlocks->target;
-        dir_stdafx.remove_filename();
-
+          rem_c.push_back(
+              "1:/bigobj"); // remove compile target of the original command
         for (auto &h : headerBlocks->headers) {
           if (!is_in_dir(dir_stdafx, h.header))
             continue;
@@ -318,7 +321,7 @@ bool CCOptions::from_json_file(fs::path config_json, const fs::path &base)
   return false;
 }
 
-bool is_in_dir(fs::path const& parent, fs::path const& child)
+bool is_in_dir(fs::path const& parent, fs::path const& child, fs::path::iterator &childIt)
 {
   if (!parent.is_absolute() || !child.is_absolute())
     throw std::runtime_error("is_in_dir supports only absolute paths");
@@ -329,13 +332,20 @@ bool is_in_dir(fs::path const& parent, fs::path const& child)
   auto cEnd = child.end();
 
   fs::path builtChild;
-  while(pIt != pEnd && cIt != cEnd)
+  while((pIt != pEnd) && !pIt->empty() && cIt != cEnd)
   {
     builtChild /= *cIt;
     ++pIt;
     ++cIt;
   }
+  childIt = cIt;
   std::error_code err;
 
   return fs::equivalent(parent, builtChild, err);
+}
+
+bool is_in_dir(fs::path const& parent, fs::path const& child)
+{
+  fs::path::iterator dummy;
+  return is_in_dir(parent, child, dummy);
 }
