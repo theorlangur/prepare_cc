@@ -6,7 +6,8 @@
 #include <ios>
 #include <string_view>
 #include <algorithm>
-#include <iostream>
+
+#include "log.h"
 
 auto spaceFinder(std::string_view &sv)
 {
@@ -131,7 +132,7 @@ IncludeList getAllRelativeIncludes(fs::path h)
       if (!i.guard.empty())
         res.emplace_back(i);
       else
-        std::cout << "inc (no guard): " << i.file << "\n";
+        lWarn() << "inc (no guard): " << i.file << "\n";
     }
     return res;
 }

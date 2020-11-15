@@ -1,5 +1,7 @@
 #include "generate_header_blocks.h"
 #include "analyze_include.h"
+#include "json.hpp"
+#include "log.h"
 #include <filesystem>
 #include <fstream>
 #include <string_view>
@@ -7,7 +9,13 @@
 std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo)
 {
   if (!fs::exists(header) || !fs::exists(saveTo))
+  {
+    lDbg() << "generateHeaderBlocks either source or destination (or both) "
+              "don't exist. Aborting.\n"
+           << "Source: " << header << "\n"
+           << "Dest: " << saveTo << "\n";
     return {};
+  }
 
   IncludeList includes = getAllRelativeIncludes(header);
   if (!includes.empty())
@@ -56,6 +64,9 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
       _after << "#endif";
 
       return std::move(res);
+  }else
+  {
+    lDbg() << "No includes found: " << header << "\n";
   }
 
   return {};
@@ -64,7 +75,11 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
 std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp)
 {
   if (!fs::exists(block_cpp))
+  {
+    lWarn() << "Target file for header blocks generation doesn't exist: " << block_cpp
+           << "\n";
     return {};
+  }
 
   fs::path dir = block_cpp;
   dir.remove_filename();
@@ -72,6 +87,8 @@ std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp)
   auto inc = getNthRelativeInclude(block_cpp);
   if (inc.has_value())
       return generateHeaderBlocks(inc->file, dir);
+  else
+      lDbg() << "No first include to generate block files from: " << block_cpp << "\n";
 
   return {};
 }

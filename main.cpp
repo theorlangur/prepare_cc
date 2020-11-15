@@ -5,6 +5,7 @@
 #include "analyze_include.h"
 #include "generate_header_blocks.h"
 #include "compile_commands_processor.h"
+#include "log.h"
 
 std::string to_lower(std::string s)
 {
@@ -105,6 +106,22 @@ int main(int argc, char *argv[])
             else
                 print_help = true;
         }
+        else if (arg == "--verbose") {
+            ++i;
+            if (i < argc) {
+                std::string_view _t = argv[i];
+                if (_t == "error")
+                  setGlobalLogLevel(Log::Error);
+                else if (_t == "warning")
+                  setGlobalLogLevel(Log::Warning);
+                else if (_t == "info")
+                  setGlobalLogLevel(Log::Info);
+                else if (_t == "dbg")
+                  setGlobalLogLevel(Log::Debug);
+            }
+            else
+                setGlobalLogLevel(Log::Info);
+        }
         else if (arg == "--help")
             print_help = true;
         else if (arg == "--clang-cl")
@@ -143,12 +160,22 @@ int main(int argc, char *argv[])
 
     if (print_help)
     {
-      std::cout << "Usage: prepare_cc [--base <dir>] --config <path-to-json-config-file> --from <path-to-compile_commands.json> [--to <path-to-output-file>] [--clang-cl] [--filter-in <path-to-process-commands>] [--filter-out <path-to-process-commands>] [--type <ccls|clangd>] [--help]\n";
+      std::cout << "Usage: prepare_cc [--base <dir>] --config "
+                   "<path-to-json-config-file> --from "
+                   "<path-to-compile_commands.json> [--to "
+                   "<path-to-output-file>] [--clang-cl] [--filter-in "
+                   "<path-to-process-commands>] [--filter-out "
+                   "<path-to-process-commands>] [--type <ccls|clangd>] "
+                   "[--verbose [error|warning|info|dbg]] [--help]\n";
       return 0;
     }
 
     if (opts.save_to.empty())
-        opts.save_to = opts.compile_commands_json;
+    {
+      lInfo() << "destination to store was not provided so using source:\n"
+              << opts.compile_commands_json << "\n";
+      opts.save_to = opts.compile_commands_json;
+    }
 
     processCompileCommandsTo(opts);
     return 0;
