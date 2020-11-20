@@ -14,6 +14,8 @@ struct HeaderBlocks
     {
         fs::path header;
         std::string define;
+		fs::path include_before;
+		fs::path include_after;
     };
     fs::path target;
     fs::path include_before;
@@ -23,7 +25,7 @@ struct HeaderBlocks
     std::vector<Header> headers;
 };
 
-std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo);
-std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp);
+std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo, bool separate_includes);
+std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir, bool separate_includes);
 
 #endif

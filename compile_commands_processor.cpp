@@ -46,9 +46,10 @@ nlohmann::json internProcessCompileCommands(fs::path compile_commands_json, json
     return res;
 }
 
-void PrepareForClangD(nlohmann::json &obj, fs::path target, bool cl) 
+void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opts) 
 {
-    auto headerBlocks = generateHeaderBlocksForBlockFile(target);
+    bool cl = opts.clang_cl;
+    auto headerBlocks = generateHeaderBlocksForBlockFile(target, opts.include_dir, opts.include_per_file);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
       std::string inc_stdafx(cl ? "/clang:--include" : "--include=");
@@ -128,18 +129,20 @@ std::string convert_separators(std::string in, bool convert)
   return in;
 }
 
-void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl) 
+void PrepareForCcls(nlohmann::json &obj, fs::path target, CCOptions const& opts) 
 {
-    auto headerBlocks = generateHeaderBlocksForBlockFile(target);
+    bool cl = opts.clang_cl;
+    auto headerBlocks = generateHeaderBlocksForBlockFile(target, opts.include_dir, opts.include_per_file);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
-      std::string inc_stdafx(cl ? "/clang:--include" : "--include=");
+      std::string inc_base(cl ? "/clang:--include" : "--include=");
+      std::string inc_stdafx(inc_base);
       inc_stdafx += headerBlocks->target.string();
 
-      std::string inc_before(cl ? "/clang:--include" : "--include=");
+      std::string inc_before(inc_base);
       inc_before += headerBlocks->include_before.string();
 
-      std::string inc_after(cl ? "/clang:--include" : "--include=");
+      std::string inc_after(inc_base);
       inc_after += headerBlocks->include_after.string();
 
       fs::path dir_stdafx = headerBlocks->target;
@@ -184,13 +187,32 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target, bool cl)
         } else
           add_args.push_back("-c");
         add_args.push_back(headerBlocks->dummy_cpp.string());
-        std::string def(cl ? "/D " : "-D");
-        def += h.define;
-        add_args.push_back(def);
+        if (!h.define.empty())
+        {
+			std::string def(cl ? "/D " : "-D");
+			def += h.define;
+			add_args.push_back(def);
+        }
 
-        add_args.push_back(inc_before);
+        if (!h.include_before.empty())
+        {
+            std::string inc_b(inc_base);
+            inc_b += h.include_before.string();
+			add_args.push_back(inc_b);
+        }
+        else
+			add_args.push_back(inc_before);
+
         add_args.push_back(inc_stdafx);
-        add_args.push_back(inc_after);
+
+        if (!h.include_after.empty())
+        {
+            std::string inc_a(inc_base);
+            inc_a += h.include_after.string();
+			add_args.push_back(inc_a);
+        }
+        else
+			add_args.push_back(inc_after);
 
         h_dep["add"] = add_args;
 
@@ -260,13 +282,13 @@ bool processCompileCommandsTo(CCOptions const& options)
         {
           lInfo() << "Preparation for ccls: "
                   << file << "\n";
-          PrepareForCcls(entry, file, options.clang_cl);
+          PrepareForCcls(entry, file, options);
         }
         else if (options.t == IndexerType::ClangD)
         {
           lInfo() << "Preparation for clangd: "
                   << file << "\n";
-          PrepareForClangD(entry, file, options.clang_cl);
+          PrepareForClangD(entry, file, options);
         }
 
          return true;
@@ -335,10 +357,21 @@ bool CCOptions::from_json_file(fs::path config_json, const fs::path &base)
               save_to = base / save_to;
               lInfo() << "'to' in absolute form:" << save_to << "\n";
             }
-          } else if (e.key() == "clang-cl" && e.value().is_boolean())
+          } 
+          else if (e.key() == "clang-cl" && e.value().is_boolean())
           {
             clang_cl = e.value().get<bool>();
             lInfo() << "'clang-cl':" << clang_cl << "\n";
+          }
+          else if (e.key() == "include-dir" && e.value().is_string())
+          {
+              include_dir = e.value().get<std::string>();
+			  lInfo() << "'include-dir':" << include_dir << "\n";
+          }
+          else if (e.key() == "include-per-file" && e.value().is_boolean())
+          {
+            include_per_file = e.value().get<bool>();
+            lInfo() << "'include-per-file':" << clang_cl << "\n";
           }
           else if (e.key() == "type" && e.value().is_string()) {
             lInfo() << "'type':" << e.value() << "\n";

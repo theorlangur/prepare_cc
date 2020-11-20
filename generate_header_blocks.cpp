@@ -6,7 +6,7 @@
 #include <fstream>
 #include <string_view>
 
-std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo)
+std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo, bool separate_includes)
 {
   if (!fs::exists(header) || !fs::exists(saveTo))
   {
@@ -22,12 +22,15 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
   {
       HeaderBlocks res;
       res.target = header;
-      res.include_before = saveTo;
-      res.include_after = saveTo;
       res.dummy_cpp = saveTo;
-      res.include_before /= "include_before.h";
-      res.include_after /= "include_after.h";
       res.dummy_cpp /= "dummy.cpp";
+      if (!separate_includes)
+      {
+		  res.include_before = saveTo;
+		  res.include_after = saveTo;
+		  res.include_before /= "include_before.h";
+		  res.include_after /= "include_after.h";
+      }
 
       std::ofstream _dummy(res.dummy_cpp);
       _dummy << "namespace {};\n";
@@ -39,17 +42,51 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
       {
           HeaderBlocks::Header h;
           h.header = i->file;
-          h.define = i->guard + "_INCLUDE";
 
-          _before << '#' << directive << " defined(" << h.define << ")\n";
-          _before << "#ifndef INCLUDE_AFTER_WITHOUT_TARGET\n";
-          _before << "#define " << i->guard << "\n";
-          _before << "#endif\n";
-          for(auto j = i + 1; j != includes.end(); ++j)
-              _before << "#define " << j->guard << "\n";
+		  std::ofstream _xbefore;
+		  std::ofstream _xafter;
 
-          _after << '#' << directive << " defined(" << h.define << ") && !defined(INCLUDE_AFTER_WITHOUT_TARGET)\n";
-          _after << "#undef " << i->guard << "\n";
+          if (separate_includes)
+          {
+              h.include_before = saveTo;
+              h.include_after = saveTo;
+
+              h.include_before /= i->file.filename();
+              h.include_after /= i->file.filename();
+              h.include_before += ".before.inc";
+              h.include_after += ".after.inc";
+
+              _xbefore.open(h.include_before, std::ios::out);
+              _xafter.open(h.include_after, std::ios::out);
+
+			  _xbefore << "#ifndef INCLUDE_AFTER_WITHOUT_TARGET\n";
+			  _xbefore << "#define " << i->guard << "\n";
+			  _xbefore << "#endif\n";
+          }else 
+          { 
+			  h.define = i->guard + "_INCLUDE";
+			  _before << '#' << directive << " defined(" << h.define << ")\n";
+			  _before << "#ifndef INCLUDE_AFTER_WITHOUT_TARGET\n";
+			  _before << "#define " << i->guard << "\n";
+			  _before << "#endif\n";
+          }
+          for (auto j = i + 1; j != includes.end(); ++j)
+          {
+              if (!separate_includes)
+				  _before << "#define " << j->guard << "\n";
+              else
+				  _xbefore << "#define " << j->guard << "\n";
+          }
+
+          if (!separate_includes)
+          {
+			  _after << '#' << directive << " defined(" << h.define << ") && !defined(INCLUDE_AFTER_WITHOUT_TARGET)\n";
+			  _after << "#undef " << i->guard << "\n";
+          }
+          else
+          {
+			  _xafter << "#undef " << i->guard << "\n";
+          }
 
           res.headers.push_back(std::move(h));
       };
@@ -72,7 +109,7 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
   return {};
 }
 
-std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp)
+std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir, bool separate_includes)
 {
   if (!fs::exists(block_cpp))
   {
@@ -84,9 +121,24 @@ std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp)
   fs::path dir = block_cpp;
   dir.remove_filename();
 
+  if (!target_subdir.empty())
+  {
+	  dir /= target_subdir;
+
+	  if (!fs::exists(dir))
+	  {
+		  std::error_code ec;
+		  if (!fs::create_directory(dir, ec))
+		  {
+			  lErr() << "Could not create target directory for generated files at " << dir << "\n";
+			  return {};
+		  }
+	  }
+  }
+
   auto inc = getNthRelativeInclude(block_cpp);
   if (inc.has_value())
-      return generateHeaderBlocks(inc->file, dir);
+      return generateHeaderBlocks(inc->file, dir, separate_includes);
   else
       lDbg() << "No first include to generate block files from: " << block_cpp << "\n";
 
