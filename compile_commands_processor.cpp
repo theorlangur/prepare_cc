@@ -52,15 +52,15 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opt
     auto headerBlocks = generateHeaderBlocksForBlockFile(target, opts.include_dir, opts.include_per_file);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
-      std::string inc_stdafx(cl ? "/clang:--include" : "--include=");
+      std::string inc_base(cl ? "/clang:--include" : "--include=");
+      std::string inc_stdafx(inc_base);
       inc_stdafx += headerBlocks->target.string();
 
-      std::string inc_before(cl ? "/clang:--include" : "--include=");
+      std::string inc_before(inc_base);
       inc_before += headerBlocks->include_before.string();
 
-      std::string inc_after(cl ? "/clang:--include" : "--include=");
+      std::string inc_after(inc_base);
       inc_after += headerBlocks->include_after.string();
-
       fs::path dir_stdafx = headerBlocks->target;
       dir_stdafx.remove_filename();
 
@@ -102,17 +102,32 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opt
         h_dep["file"] = h.header.string();
         h_dep["remove"] = rem_c;
         nlohmann::json add_args;
-        std::string def(cl ? "/D " : "-D");
-        def += h.define;
-        add_args.push_back(def);
-
         if (cl) {
           add_args.push_back("/TP"); // compile as C++
         }
 
-        add_args.push_back(inc_before);
+        if (!h.define.empty()) {
+          std::string def(cl ? "/D " : "-D");
+          def += h.define;
+          add_args.push_back(def);
+        }
+
+        if (!h.include_before.empty()) {
+          std::string inc_b(inc_base);
+          inc_b += h.include_before.string();
+          add_args.push_back(inc_b);
+        } else
+          add_args.push_back(inc_before);
+
         add_args.push_back(inc_stdafx);
-        add_args.push_back(inc_after);
+
+        if (!h.include_after.empty()) {
+          std::string inc_a(inc_base);
+          inc_a += h.include_after.string();
+          add_args.push_back(inc_a);
+        } else
+          add_args.push_back(inc_after);
+
 
         h_dep["add"] = add_args;
 
@@ -192,32 +207,27 @@ void PrepareForCcls(nlohmann::json &obj, fs::path target, CCOptions const& opts)
         } else
           add_args.push_back("-c");
         add_args.push_back(headerBlocks->dummy_cpp.string());
-        if (!h.define.empty())
-        {
-			std::string def(cl ? "/D " : "-D");
-			def += h.define;
-			add_args.push_back(def);
+        if (!h.define.empty()) {
+          std::string def(cl ? "/D " : "-D");
+          def += h.define;
+          add_args.push_back(def);
         }
 
-        if (!h.include_before.empty())
-        {
-            std::string inc_b(inc_base);
-            inc_b += h.include_before.string();
-			add_args.push_back(inc_b);
-        }
-        else
-			add_args.push_back(inc_before);
+        if (!h.include_before.empty()) {
+          std::string inc_b(inc_base);
+          inc_b += h.include_before.string();
+          add_args.push_back(inc_b);
+        } else
+          add_args.push_back(inc_before);
 
         add_args.push_back(inc_stdafx);
 
-        if (!h.include_after.empty())
-        {
-            std::string inc_a(inc_base);
-            inc_a += h.include_after.string();
-			add_args.push_back(inc_a);
-        }
-        else
-			add_args.push_back(inc_after);
+        if (!h.include_after.empty()) {
+          std::string inc_a(inc_base);
+          inc_a += h.include_after.string();
+          add_args.push_back(inc_a);
+        } else
+          add_args.push_back(inc_after);
 
         h_dep["add"] = add_args;
 
