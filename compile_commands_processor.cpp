@@ -46,9 +46,17 @@ nlohmann::json internProcessCompileCommands(fs::path compile_commands_json, json
     return res;
 }
 
-void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opts) 
+std::string convert_separators(std::string in, bool convert)
+{
+  if (convert)
+    std::replace(in.begin(), in.end(), '\\', '/');
+  return in;
+}
+
+void PrepareForIndexer(nlohmann::json &obj, fs::path target, CCOptions const& opts) 
 {
     bool cl = opts.clang_cl;
+    bool conv_sep = cl && opts.t == IndexerType::CCLS;
     auto headerBlocks = generateHeaderBlocksForBlockFile(target, opts.include_dir, opts.include_per_file);
     if (headerBlocks.has_value() && !headerBlocks->headers.empty())
     {
@@ -69,7 +77,7 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opt
       if (inc.has_value() && (inc->file.extension() == ".cpp" ||
                               inc->file.extension() == ".CPP")) {
         nlohmann::json cpp_dep;
-        cpp_dep["file"] = inc->file.string();
+        cpp_dep["file"] = convert_separators(inc->file.string(), conv_sep);
         cpp_dep["add"].push_back(inc_stdafx);
         lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
         deps.push_back(cpp_dep);
@@ -99,11 +107,19 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opt
           continue;
         }
         nlohmann::json h_dep;
-        h_dep["file"] = h.header.string();
+        h_dep["file"] = convert_separators(h.header.string(), conv_sep);
         h_dep["remove"] = rem_c;
         nlohmann::json add_args;
-        if (cl) {
+        if (cl)
           add_args.push_back("/TP"); // compile as C++
+
+        if (opts.t == IndexerType::CCLS)
+        {
+          if (cl)
+            add_args.push_back("/bigobj");
+          else
+            add_args.push_back("-c");
+          add_args.push_back(headerBlocks->dummy_cpp.string());
         }
 
         if (!h.define.empty()) {
@@ -128,106 +144,6 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opt
         } else
           add_args.push_back(inc_after);
 
-
-        h_dep["add"] = add_args;
-
-        deps.push_back(h_dep);
-
-        obj["dependencies"] = deps;
-      }
-    }
-    else
-    {
-      lInfo() << "Wasn't able to generate header block files for " << target << "\n";
-    }
-}
-
-std::string convert_separators(std::string in, bool convert)
-{
-  if (convert)
-    std::replace(in.begin(), in.end(), '\\', '/');
-  return in;
-}
-
-void PrepareForCcls(nlohmann::json &obj, fs::path target, CCOptions const& opts) 
-{
-    bool cl = opts.clang_cl;
-    auto headerBlocks = generateHeaderBlocksForBlockFile(target, opts.include_dir, opts.include_per_file);
-    if (headerBlocks.has_value() && !headerBlocks->headers.empty())
-    {
-      std::string inc_base(cl ? "/clang:--include" : "--include=");
-      std::string inc_stdafx(inc_base);
-      inc_stdafx += headerBlocks->target.string();
-
-      std::string inc_before(inc_base);
-      inc_before += headerBlocks->include_before.string();
-
-      std::string inc_after(inc_base);
-      inc_after += headerBlocks->include_after.string();
-
-      fs::path dir_stdafx = headerBlocks->target;
-      dir_stdafx.remove_filename();
-
-      nlohmann::json deps;
-      auto inc = findClosestRelativeInclude(target, dir_stdafx, 1);
-      if (inc.has_value() && (inc->file.extension() == ".cpp" ||
-                              inc->file.extension() == ".CPP")) {
-        nlohmann::json cpp_dep;
-        cpp_dep["file"] = convert_separators(inc->file.string(), cl);
-        cpp_dep["add"].push_back(inc_stdafx);
-        lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
-        deps.push_back(cpp_dep);
-      } else {
-        lInfo() << "Didn't find any included cpp file (so no cpp dependency in "
-                   "json) for file: "
-                << target << "\n";
-      }
-
-      nlohmann::json rem_c;
-      if (!cl)
-        rem_c.push_back(
-            "1:-c"); // remove compile target of the original command
-      else
-        rem_c.push_back(
-            "1:/bigobj"); // remove compile target of the original command
-      for (auto &h : headerBlocks->headers) {
-        if (!is_in_dir(dir_stdafx, h.header)) {
-          lInfo() << "Ignoring header " << h.header << "\n"
-                  << "as it's not in the dir: " << dir_stdafx << "\n";
-          continue;
-        }
-
-        nlohmann::json h_dep;
-        h_dep["file"] = convert_separators(h.header.string(), cl);
-        h_dep["remove"] = rem_c;
-        nlohmann::json add_args;
-        if (cl) {
-          add_args.push_back("/TP"); // compile as C++
-          add_args.push_back("/bigobj");
-        } else
-          add_args.push_back("-c");
-        add_args.push_back(headerBlocks->dummy_cpp.string());
-        if (!h.define.empty()) {
-          std::string def(cl ? "/D " : "-D");
-          def += h.define;
-          add_args.push_back(def);
-        }
-
-        if (!h.include_before.empty()) {
-          std::string inc_b(inc_base);
-          inc_b += h.include_before.string();
-          add_args.push_back(inc_b);
-        } else
-          add_args.push_back(inc_before);
-
-        add_args.push_back(inc_stdafx);
-
-        if (!h.include_after.empty()) {
-          std::string inc_a(inc_base);
-          inc_a += h.include_after.string();
-          add_args.push_back(inc_a);
-        } else
-          add_args.push_back(inc_after);
 
         h_dep["add"] = add_args;
 
@@ -297,14 +213,14 @@ bool processCompileCommandsTo(CCOptions const& options)
         {
           lInfo() << "Preparation for ccls: "
                   << file << "\n";
-          PrepareForCcls(entry, file, options);
         }
         else if (options.t == IndexerType::ClangD)
         {
           lInfo() << "Preparation for clangd: "
                   << file << "\n";
-          PrepareForClangD(entry, file, options);
         }
+
+        PrepareForIndexer(entry, file, options);
 
          return true;
     });
