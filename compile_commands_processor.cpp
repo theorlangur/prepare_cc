@@ -93,6 +93,11 @@ void PrepareForClangD(nlohmann::json &obj, fs::path target, CCOptions const& opt
                   << "as it's not in the dir: " << dir_stdafx << "\n";
           continue;
         }
+        if (opts.is_skipped(h.header))
+        {
+          lInfo() << "Skipping header " << h.header << "\n";
+          continue;
+        }
         nlohmann::json h_dep;
         h_dep["file"] = h.header.string();
         h_dep["remove"] = rem_c;
@@ -318,6 +323,14 @@ bool CCOptions::is_filtered_out(fs::path const &f) const {
   return false;
 }
 
+bool CCOptions::is_skipped(fs::path const &f) const
+{
+  for (const auto &re : skip_dep)
+    if (std::regex_search(f.string(), re))
+      return true;
+  return false;
+}
+
 std::string CCOptions::modify_command(std::string cmd) const {
   for (Replace const &r : command_modifiers)
     cmd = std::regex_replace(cmd, r.replace, r.with);
@@ -416,6 +429,16 @@ bool CCOptions::from_json_file(fs::path config_json, const fs::path &base)
                 throw "unsupported replace element format";
               lInfo() << "Replace '" << reStr << "' with '"<< r.with <<"'\n";
               command_modifiers.push_back(r);
+            }
+          }else if (e.key() == "skip-deps" && e.value().is_array())
+          {
+            lInfo() << "Adding 'skip-deps'\n";
+            for(auto const &skip : e.value())
+            {
+              if (skip.is_string())
+                skip_dep.push_back(std::regex(skip.get<std::string>()));
+              else
+                throw "for skipping dependency a string representing a regular expression was expected";
             }
           }
         }

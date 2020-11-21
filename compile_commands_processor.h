@@ -25,6 +25,7 @@ struct CCOptions
   std::vector<fs::path> filter_in;
   std::vector<fs::path> filter_out;
   std::vector<Replace> command_modifiers;
+  std::vector<std::regex> skip_dep;
   IndexerType t = IndexerType::ClangD;
   bool clang_cl = false;
   std::string include_dir;
@@ -32,6 +33,7 @@ struct CCOptions
 
   bool is_filtered_in(fs::path const& f) const;
   bool is_filtered_out(fs::path const& f) const;
+  bool is_skipped(fs::path const& f) const;
   std::string modify_command(std::string cmd) const;
   bool from_json_file(fs::path config_json, const fs::path &base);
 };
