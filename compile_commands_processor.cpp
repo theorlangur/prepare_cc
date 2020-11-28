@@ -58,6 +58,187 @@ std::string convert_separators(std::string in, bool convert)
   return in;
 }
 
+class IndexerPreparator
+{
+  public:
+    IndexerPreparator(CCOptions const& opts): 
+      opts(opts),
+      cl(opts.clang_cl),
+      conv_sep(cl && opts.t == IndexerType::CCLS),
+      inc_base(cl ? "/clang:--include" : "--include=")
+    {
+    }
+
+    void Prepare(nlohmann::json &obj, fs::path target, json_list &to_add)
+    {
+      this->target = std::move(target);
+      this->pObj = &obj;
+      this->pToAdd = &to_add;
+
+      do_start();
+
+      auto headerBlocks = generateHeaderBlocksForBlockFile(
+          this->target, opts.include_dir, opts.include_per_file);
+      if (headerBlocks.has_value() && !headerBlocks->headers.empty()) {
+        pHeaderBlocks = &*headerBlocks;
+
+        inc_stdafx = inc_base;
+        inc_stdafx += headerBlocks->target.string();
+
+        inc_before = inc_base;
+        inc_before += headerBlocks->include_before.string();
+
+        inc_after = inc_base;
+        inc_after += headerBlocks->include_after.string();
+
+        dir_stdafx = headerBlocks->target;
+        dir_stdafx.remove_filename();
+
+        auto inc = findClosestRelativeInclude(this->target, dir_stdafx, 1);
+        if (inc.has_value() && (inc->file.extension() == ".cpp" ||
+                                inc->file.extension() == ".CPP")) {
+          do_closest_cpp_include(*inc);
+        } else {
+          lInfo()
+              << "Didn't find any included cpp file (so no cpp dependency in "
+                 "json) for file: "
+              << target << "\n";
+        }
+
+        for (auto &h : headerBlocks->headers) {
+          if (!is_in_dir(dir_stdafx, h.header)) {
+            lInfo() << "Ignoring header " << h.header << "\n"
+                    << "as it's not in the dir: " << dir_stdafx << "\n";
+            continue;
+          }
+          if (opts.is_skipped(h.header)) {
+            lInfo() << "Skipping header " << h.header << "\n";
+            continue;
+          }
+
+          do_process_header(h);
+        }
+
+        do_header_blocks_end();
+      } else {
+        lInfo() << "Wasn't able to generate header block files for "
+                << this->target << "\n";
+      }
+
+      do_finalize();
+    }
+  protected:
+    virtual void do_start() = 0;
+    virtual void do_finalize() = 0;
+    virtual void do_closest_cpp_include(Include &inc) = 0;
+    virtual void do_process_header(HeaderBlocks::Header &h) = 0;
+    virtual void do_header_blocks_end() = 0;
+
+    //call args
+    nlohmann::json *pObj;
+    json_list *pToAdd;
+    fs::path target;
+    //temp stuff
+    std::string inc_stdafx;
+    std::string inc_before;
+    std::string inc_after;
+    fs::path dir_stdafx;
+
+    HeaderBlocks *pHeaderBlocks;
+
+    //config stuff
+    CCOptions const& opts;
+    bool cl;
+    bool conv_sep;
+    std::string inc_base;
+};
+
+class IndexerPreparatorWithDependencies: public IndexerPreparator
+{
+  public:
+    IndexerPreparatorWithDependencies(CCOptions const &opts)
+        : IndexerPreparator(opts) {
+      if (!cl)
+        rem_c.push_back(
+            "1:-c"); // remove compile target of the original command
+      else
+        rem_c.push_back(
+            "1:/bigobj"); // remove compile target of the original command
+    }
+
+  private:
+    virtual void do_start() override
+    {
+      deps.clear();
+    }
+
+    virtual void do_finalize() override
+    {
+      pToAdd->emplace_back(std::move(*pObj));
+    }
+
+    virtual void do_closest_cpp_include(Include &inc) override
+    {
+        nlohmann::json cpp_dep;
+        cpp_dep["file"] = convert_separators(inc.file.string(), conv_sep);
+        cpp_dep["add"].push_back(inc_stdafx);
+        lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
+        deps.push_back(cpp_dep);
+    }
+    void do_process_header(HeaderBlocks::Header &h) override
+    {
+        nlohmann::json h_dep;
+        h_dep["file"] = convert_separators(h.header.string(), conv_sep);
+        h_dep["remove"] = rem_c;
+        nlohmann::json add_args;
+        if (cl)
+          add_args.push_back("/TP"); // compile as C++
+
+        if (opts.t == IndexerType::CCLS)
+        {
+          if (cl)
+            add_args.push_back("/bigobj");
+          else
+            add_args.push_back("-c");
+          add_args.push_back(pHeaderBlocks->dummy_cpp.string());
+        }
+
+        if (!h.define.empty()) {
+          std::string def(cl ? "/D " : "-D");
+          def += h.define;
+          add_args.push_back(def);
+        }
+
+        if (!h.include_before.empty()) {
+          std::string inc_b(inc_base);
+          inc_b += h.include_before.string();
+          add_args.push_back(inc_b);
+        } else
+          add_args.push_back(inc_before);
+
+        add_args.push_back(inc_stdafx);
+
+        if (!h.include_after.empty()) {
+          std::string inc_a(inc_base);
+          inc_a += h.include_after.string();
+          add_args.push_back(inc_a);
+        } else
+          add_args.push_back(inc_after);
+
+
+        h_dep["add"] = add_args;
+
+        deps.push_back(h_dep);
+    }
+    virtual void do_header_blocks_end() override
+    {
+      (*pObj)["dependencies"] = deps;
+    }
+
+    nlohmann::json deps;
+    nlohmann::json rem_c;
+};
+
 void PrepareForIndexer(nlohmann::json &obj, fs::path target, json_list &to_add, CCOptions const& opts) 
 {
     bool cl = opts.clang_cl;
@@ -175,6 +356,7 @@ bool processCompileCommandsTo(CCOptions const& options)
 
     lWarn() << "Processing compile commands from:\n"
             << options.compile_commands_json << "\n";
+    IndexerPreparatorWithDependencies indexer(options);
     std::set<fs::path> seen_paths;
     nlohmann::json res = internProcessCompileCommands(options.compile_commands_json,
      [&](nlohmann::json &entry, fs::path file, json_list &to_add)->bool{
@@ -228,7 +410,8 @@ bool processCompileCommandsTo(CCOptions const& options)
                   << file << "\n";
         }
 
-        PrepareForIndexer(entry, file, to_add, options);
+        indexer.Prepare(entry, file, to_add);
+        //PrepareForIndexer(entry, file, to_add, options);
 
          return true;
     });
