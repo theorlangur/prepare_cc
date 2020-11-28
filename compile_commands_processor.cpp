@@ -116,7 +116,7 @@ class IndexerPreparator
             continue;
           }
 
-          do_process_header(h);
+          process_header(h);
         }
 
         do_header_blocks_end();
@@ -131,8 +131,57 @@ class IndexerPreparator
     virtual void do_start() = 0;
     virtual void do_finalize() = 0;
     virtual void do_closest_cpp_include(Include &inc) = 0;
-    virtual void do_process_header(HeaderBlocks::Header &h) = 0;
+
+    virtual void do_process_header_begin() = 0;
+    virtual void do_process_header_set_file(std::string f) = 0;
+    virtual void do_process_header_remove_args(const char *pWhat) = 0;
+    virtual void do_process_header_add_args(std::string what) = 0;
+    virtual void do_process_header_end() = 0;
+
     virtual void do_header_blocks_end() = 0;
+
+    void process_header(HeaderBlocks::Header &h)
+    {
+        pHeader = &h;
+        do_process_header_begin();
+        do_process_header_set_file(convert_separators(h.header.string(), conv_sep));
+        do_process_header_remove_args(cl ? "/bigobj" : "-c");
+        if (cl)
+          do_process_header_add_args("/TP");
+
+        if (opts.t == IndexerType::CCLS)
+        {
+          if (cl)
+            do_process_header_add_args("/bigobj");
+          else
+            do_process_header_add_args("-c");
+          do_process_header_add_args(pHeaderBlocks->dummy_cpp.string());
+        }
+
+        if (!h.define.empty()) {
+          std::string def(cl ? "/D " : "-D");
+          def += h.define;
+          do_process_header_add_args(def);
+        }
+
+        if (!h.include_before.empty()) {
+          std::string inc_b(inc_base);
+          inc_b += h.include_before.string();
+          do_process_header_add_args(inc_b);
+        } else
+          do_process_header_add_args(inc_before);
+
+        do_process_header_add_args(inc_stdafx);
+
+        if (!h.include_after.empty()) {
+          std::string inc_a(inc_base);
+          inc_a += h.include_after.string();
+          do_process_header_add_args(inc_a);
+        } else
+          do_process_header_add_args(inc_after);
+
+        do_process_header_end();
+    }
 
     //call args
     nlohmann::json *pObj;
@@ -143,6 +192,7 @@ class IndexerPreparator
     std::string inc_before;
     std::string inc_after;
     fs::path dir_stdafx;
+    HeaderBlocks::Header *pHeader;//current header
 
     HeaderBlocks *pHeaderBlocks;
 
@@ -185,51 +235,32 @@ class IndexerPreparatorWithDependencies: public IndexerPreparator
         lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
         deps.push_back(cpp_dep);
     }
-    void do_process_header(HeaderBlocks::Header &h) override
+
+    virtual void do_process_header_begin() override 
+    { 
+      h_dep.clear();
+      add_args.clear();
+    }
+    virtual void do_process_header_set_file(std::string f) override
     {
-        nlohmann::json h_dep;
-        h_dep["file"] = convert_separators(h.header.string(), conv_sep);
-        h_dep["remove"] = rem_c;
-        nlohmann::json add_args;
-        if (cl)
-          add_args.push_back("/TP"); // compile as C++
+      h_dep["file"] = f;
 
-        if (opts.t == IndexerType::CCLS)
-        {
-          if (cl)
-            add_args.push_back("/bigobj");
-          else
-            add_args.push_back("-c");
-          add_args.push_back(pHeaderBlocks->dummy_cpp.string());
-        }
-
-        if (!h.define.empty()) {
-          std::string def(cl ? "/D " : "-D");
-          def += h.define;
-          add_args.push_back(def);
-        }
-
-        if (!h.include_before.empty()) {
-          std::string inc_b(inc_base);
-          inc_b += h.include_before.string();
-          add_args.push_back(inc_b);
-        } else
-          add_args.push_back(inc_before);
-
-        add_args.push_back(inc_stdafx);
-
-        if (!h.include_after.empty()) {
-          std::string inc_a(inc_base);
-          inc_a += h.include_after.string();
-          add_args.push_back(inc_a);
-        } else
-          add_args.push_back(inc_after);
-
-
+      h_dep["remove"] = rem_c;
+    }
+    virtual void do_process_header_remove_args(const char *pWhat) override
+    {
+      //dummy
+    }
+    virtual void do_process_header_add_args(std::string what) override
+    {
+      add_args.push_back(what);
+    }
+    virtual void do_process_header_end() override
+    {
         h_dep["add"] = add_args;
-
         deps.push_back(h_dep);
     }
+
     virtual void do_header_blocks_end() override
     {
       (*pObj)["dependencies"] = deps;
@@ -237,6 +268,8 @@ class IndexerPreparatorWithDependencies: public IndexerPreparator
 
     nlohmann::json deps;
     nlohmann::json rem_c;
+    nlohmann::json h_dep;
+    nlohmann::json add_args;
 };
 
 bool processCompileCommandsTo(CCOptions const& options)
