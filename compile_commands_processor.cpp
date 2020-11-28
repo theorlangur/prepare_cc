@@ -153,9 +153,9 @@ void PrepareForIndexer(nlohmann::json &obj, fs::path target, json_list &to_add, 
         h_dep["add"] = add_args;
 
         deps.push_back(h_dep);
-
-        obj["dependencies"] = deps;
       }
+
+      obj["dependencies"] = deps;
     }
     else
     {
