@@ -1,5 +1,7 @@
 #include "indexer_preparator.h"
 #include "log.h"
+#include <cctype>
+#include <iterator>
 
 std::string convert_separators(std::string in, bool convert) {
   if (convert)
@@ -7,6 +9,9 @@ std::string convert_separators(std::string in, bool convert) {
   return in;
 }
 
+/*************************************************************************/
+/*IndexerPreparator                                                      */
+/*************************************************************************/
 IndexerPreparator::IndexerPreparator(CCOptions const &opts)
     : opts(opts), cl(opts.clang_cl),
       conv_sep(cl && opts.t == IndexerType::CCLS),
@@ -111,6 +116,9 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   do_process_header_end();
 }
 
+/*************************************************************************/
+/*IndexerPreparatorWithDependencies                                      */
+/*************************************************************************/
 IndexerPreparatorWithDependencies::IndexerPreparatorWithDependencies(
     CCOptions const &opts)
     : IndexerPreparator(opts) {
@@ -147,7 +155,7 @@ void IndexerPreparatorWithDependencies::do_process_header_set_file(
   h_dep["remove"] = rem_c;
 }
 void IndexerPreparatorWithDependencies::do_process_header_remove_args(
-    const char *pWhat) {
+    std::string_view what) {
   // dummy
 }
 void IndexerPreparatorWithDependencies::do_process_header_add_args(
@@ -161,4 +169,101 @@ void IndexerPreparatorWithDependencies::do_process_header_end() {
 
 void IndexerPreparatorWithDependencies::do_header_blocks_end() {
   (*pObj)["dependencies"] = deps;
+}
+
+void remove_search_and_next(std::string &where, std::string_view const & what)
+{
+    size_t from = 0;
+    size_t res = 0;
+    while ((res = where.find(what, from)) != std::string::npos)
+    {
+        if (!res || std::isspace(where[res - 1]))
+        {
+            size_t end = res + what.size();
+            if (end == where.size() || std::isspace(where[end]))
+            {
+                //found it
+                break;
+            }
+        }
+    }
+
+    size_t to = where.size();
+    auto nextArgBeg =
+        std::find_if(where.begin() + res + what.size(), where.end(),
+                     [](char c) { return !std::isspace(c); });
+    if (nextArgBeg != where.end())
+    {
+      auto nextArgEnd = std::find_if(nextArgBeg, where.end(),
+                                     [](char c) { return std::isspace(c); });
+      if (nextArgEnd != where.end())
+        to = std::distance(where.begin(), nextArgEnd);
+    }
+
+    where.erase(res, to - res);
+}
+
+/*************************************************************************/
+/*IndexerPreparatorCanonical                                             */
+/*************************************************************************/
+IndexerPreparatorCanonical::IndexerPreparatorCanonical(CCOptions const &opts)
+    : IndexerPreparator(opts) 
+    {
+        if (cl)
+            compile_option = "/bigobj";//stupid but ok...
+        else
+            compile_option = "-c";
+    }
+void IndexerPreparatorCanonical::do_start()
+{
+    cleaned_cmd = (*pObj)["command"];
+    remove_search_and_next(cleaned_cmd, compile_option);
+    if (!cl)
+        remove_search_and_next(cleaned_cmd, "-o");
+}
+void IndexerPreparatorCanonical::do_finalize()
+{
+}
+void IndexerPreparatorCanonical::do_closest_cpp_include(Include &inc)
+{
+  nlohmann::json cpp_dep = *pObj;
+  std::string f = convert_separators(inc.file.string(), conv_sep);
+  cpp_dep["file"] = f;
+  std::string cmd = cleaned_cmd;
+  cmd = cmd + " " + compile_option + " " + f + " " + inc_stdafx;
+  cpp_dep["command"] = cmd;
+  lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
+  pToAdd->emplace_back(std::move(cpp_dep));
+}
+
+void IndexerPreparatorCanonical::do_process_header_begin()
+{
+    entry = *pObj;
+    entry_cmd = cleaned_cmd;
+}
+
+void IndexerPreparatorCanonical::do_process_header_set_file(std::string f)
+{
+    entry["file"] = f;
+}
+
+void IndexerPreparatorCanonical::do_process_header_remove_args(std::string_view what)
+{
+    if (what != compile_option)
+        remove_search_and_next(entry_cmd, what);
+}
+
+void IndexerPreparatorCanonical::do_process_header_add_args(std::string what)
+{
+    entry_cmd += " ";
+    entry_cmd += what;
+}
+void IndexerPreparatorCanonical::do_process_header_end()
+{
+    entry["command"] = entry_cmd;
+    pToAdd->emplace_back(std::move(entry));
+}
+void IndexerPreparatorCanonical::do_header_blocks_end()
+{
+    //dummy
 }

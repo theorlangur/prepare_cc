@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <regex>
 #include <set>
 #include <stdexcept>
@@ -61,7 +62,19 @@ bool processCompileCommandsTo(CCOptions const& options)
 
     lWarn() << "Processing compile commands from:\n"
             << options.compile_commands_json << "\n";
-    IndexerPreparatorWithDependencies indexer(options);
+
+    std::unique_ptr<IndexerPreparator> indexer;
+    if (options.no_dependencies)
+    {
+      lInfo() << "Preparing compile_commands with dependencies\n";
+      indexer.reset(new IndexerPreparatorWithDependencies(options));
+    }
+    else
+    {
+      lInfo() << "Preparing compile_commands without dependencies\n";
+      indexer.reset(new IndexerPreparatorCanonical(options));
+    }
+
     std::set<fs::path> seen_paths;
     nlohmann::json res = internProcessCompileCommands(options.compile_commands_json,
      [&](nlohmann::json &entry, fs::path file, json_list &to_add)->bool{
@@ -115,7 +128,7 @@ bool processCompileCommandsTo(CCOptions const& options)
                   << file << "\n";
         }
 
-        indexer.Prepare(entry, file, to_add);
+        indexer->Prepare(entry, file, to_add);
 
          return true;
     });
@@ -200,12 +213,17 @@ bool CCOptions::from_json_file(fs::path config_json, const fs::path &base)
           else if (e.key() == "include-dir" && e.value().is_string())
           {
               include_dir = e.value().get<std::string>();
-			  lInfo() << "'include-dir':" << include_dir << "\n";
+              lInfo() << "'include-dir':" << include_dir << "\n";
           }
           else if (e.key() == "include-per-file" && e.value().is_boolean())
           {
             include_per_file = e.value().get<bool>();
-            lInfo() << "'include-per-file':" << clang_cl << "\n";
+            lInfo() << "'include-per-file':" << include_per_file << "\n";
+          }
+          else if (e.key() == "no-dependencies" && e.value().is_boolean())
+          {
+            no_dependencies = e.value().get<bool>();
+            lInfo() << "'no-dependencies':" << no_dependencies << "\n";
           }
           else if (e.key() == "type" && e.value().is_string()) {
             lInfo() << "'type':" << e.value() << "\n";

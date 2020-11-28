@@ -30,6 +30,7 @@ struct CCOptions
   bool clang_cl = false;
   std::string include_dir;
   bool include_per_file = false;
+  bool no_dependencies = false;
 
   bool is_filtered_in(fs::path const& f) const;
   bool is_filtered_out(fs::path const& f) const;

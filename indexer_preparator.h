@@ -12,6 +12,8 @@ class IndexerPreparator
 {
   public:
     IndexerPreparator(CCOptions const& opts);
+    virtual ~IndexerPreparator() = default;
+
     void Prepare(nlohmann::json &obj, fs::path target, json_list &to_add);
   protected:
     virtual void do_start() = 0;
@@ -20,7 +22,7 @@ class IndexerPreparator
 
     virtual void do_process_header_begin() = 0;
     virtual void do_process_header_set_file(std::string f) = 0;
-    virtual void do_process_header_remove_args(const char *pWhat) = 0;
+    virtual void do_process_header_remove_args(std::string_view what) = 0;
     virtual void do_process_header_add_args(std::string what) = 0;
     virtual void do_process_header_end() = 0;
 
@@ -58,7 +60,7 @@ class IndexerPreparatorWithDependencies: public IndexerPreparator
     virtual void do_closest_cpp_include(Include &inc) override;
     virtual void do_process_header_begin() override;
     virtual void do_process_header_set_file(std::string f) override;
-    virtual void do_process_header_remove_args(const char *pWhat) override;
+    virtual void do_process_header_remove_args(std::string_view what) override;
     virtual void do_process_header_add_args(std::string what) override;
     virtual void do_process_header_end() override;
     virtual void do_header_blocks_end() override;
@@ -67,6 +69,29 @@ class IndexerPreparatorWithDependencies: public IndexerPreparator
     nlohmann::json rem_c;
     nlohmann::json h_dep;
     nlohmann::json add_args;
+};
+
+//no dependencies, will multiply compile_commands.json entries
+class IndexerPreparatorCanonical: public IndexerPreparator
+{
+  public:
+    IndexerPreparatorCanonical(CCOptions const &opts);
+  private:
+    virtual void do_start() override;
+    virtual void do_finalize() override;
+    virtual void do_closest_cpp_include(Include &inc) override;
+    virtual void do_process_header_begin() override;
+    virtual void do_process_header_set_file(std::string f) override;
+    virtual void do_process_header_remove_args(std::string_view what) override;
+    virtual void do_process_header_add_args(std::string what) override;
+    virtual void do_process_header_end() override;
+    virtual void do_header_blocks_end() override;
+
+    std::string cleaned_cmd;//no compile target, no output
+    std::string compile_option;
+
+    nlohmann::json entry;
+    std::string entry_cmd;
 };
 
 #endif
