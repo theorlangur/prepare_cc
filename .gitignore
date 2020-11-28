@@ -1,3 +1,5 @@
 .vscode/
 .cache/
 build/
+relbuild/
+compile_commands.json

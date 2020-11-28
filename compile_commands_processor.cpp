@@ -1,5 +1,6 @@
 #include "compile_commands_processor.h"
 
+#include <algorithm>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -16,7 +17,8 @@
 
 #include "log.h"
 
-using json_filter_func = std::function<bool(nlohmann::json &entry, fs::path file)>;
+using json_list = std::vector<nlohmann::json>;
+using json_filter_func = std::function<bool(nlohmann::json &entry, fs::path file, json_list &to_add)>;
 
 nlohmann::json internProcessCompileCommands(fs::path compile_commands_json, json_filter_func filter)
 {
@@ -27,6 +29,7 @@ nlohmann::json internProcessCompileCommands(fs::path compile_commands_json, json
     _f >> cbd;
     if (cbd.is_array())
     {
+        json_list temp;
         for(auto &el : cbd.items())
         {
             auto obj =  el.value();
@@ -37,8 +40,10 @@ nlohmann::json internProcessCompileCommands(fs::path compile_commands_json, json
                 {
                     //ok to process
                     fs::path target_file(_jfile.get<std::string>());
-                    if (filter(obj, std::move(target_file)))
-                      res.push_back(obj);
+                    filter(obj, std::move(target_file), temp);
+                    for(auto &obj : temp)
+                      res.push_back(std::move(obj));
+                    temp.clear();
                 }
             }
         }
@@ -53,7 +58,7 @@ std::string convert_separators(std::string in, bool convert)
   return in;
 }
 
-void PrepareForIndexer(nlohmann::json &obj, fs::path target, CCOptions const& opts) 
+void PrepareForIndexer(nlohmann::json &obj, fs::path target, json_list &to_add, CCOptions const& opts) 
 {
     bool cl = opts.clang_cl;
     bool conv_sep = cl && opts.t == IndexerType::CCLS;
@@ -156,6 +161,7 @@ void PrepareForIndexer(nlohmann::json &obj, fs::path target, CCOptions const& op
     {
       lInfo() << "Wasn't able to generate header block files for " << target << "\n";
     }
+    to_add.emplace_back(std::move(obj));
 }
 
 bool processCompileCommandsTo(CCOptions const& options)
@@ -171,7 +177,7 @@ bool processCompileCommandsTo(CCOptions const& options)
             << options.compile_commands_json << "\n";
     std::set<fs::path> seen_paths;
     nlohmann::json res = internProcessCompileCommands(options.compile_commands_json,
-     [&](nlohmann::json &entry, fs::path file)->bool{
+     [&](nlohmann::json &entry, fs::path file, json_list &to_add)->bool{
             file = file.lexically_normal();
          if (options.is_filtered_out(file))
          {
@@ -181,6 +187,7 @@ bool processCompileCommandsTo(CCOptions const& options)
 
          if (!options.is_filtered_in(file))
          {
+            to_add.emplace_back(std::move(entry));
             lInfo() << "Not filtered in, adding as-is:" << file << "\n";
             return true;
          }
@@ -203,6 +210,7 @@ bool processCompileCommandsTo(CCOptions const& options)
         //only once per directory
         if (seen_paths.find(d) != seen_paths.end())
         {
+            to_add.emplace_back(std::move(entry));
             lInfo() << "This path was already processed so adding this as-is:" << file << "\n";
             return true;
         }
@@ -220,7 +228,7 @@ bool processCompileCommandsTo(CCOptions const& options)
                   << file << "\n";
         }
 
-        PrepareForIndexer(entry, file, options);
+        PrepareForIndexer(entry, file, to_add, options);
 
          return true;
     });
