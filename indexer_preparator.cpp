@@ -244,6 +244,7 @@ void IndexerPreparatorCanonical::do_process_header_begin()
 
 void IndexerPreparatorCanonical::do_process_header_set_file(std::string f)
 {
+    file = f;
     entry["file"] = f;
 }
 
@@ -260,6 +261,14 @@ void IndexerPreparatorCanonical::do_process_header_add_args(std::string what)
 }
 void IndexerPreparatorCanonical::do_process_header_end()
 {
+    if (cl)
+      entry_cmd = entry_cmd + " /clang:";
+    else
+      entry_cmd += " ";
+    entry_cmd = entry_cmd + "-xc++-header";
+
+    entry_cmd = entry_cmd + " " + compile_option + " " + file;
+
     entry["command"] = entry_cmd;
     pToAdd->emplace_back(std::move(entry));
 }

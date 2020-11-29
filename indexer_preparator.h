@@ -92,6 +92,7 @@ class IndexerPreparatorCanonical: public IndexerPreparator
 
     nlohmann::json entry;
     std::string entry_cmd;
+    std::string file;
 };
 
 #endif
