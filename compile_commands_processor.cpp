@@ -64,7 +64,7 @@ bool processCompileCommandsTo(CCOptions const& options)
             << options.compile_commands_json << "\n";
 
     std::unique_ptr<IndexerPreparator> indexer;
-    if (options.no_dependencies)
+    if (!options.no_dependencies)
     {
       lInfo() << "Preparing compile_commands with dependencies\n";
       indexer.reset(new IndexerPreparatorWithDependencies(options));
