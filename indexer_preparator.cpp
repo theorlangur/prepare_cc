@@ -23,6 +23,12 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
   this->pObj = &obj;
   this->pToAdd = &to_add;
 
+  if (cl)
+  {
+    std::string _cmd = (*pObj)["command"];
+    hasTPInCommand = _cmd.find("/TP") != std::string::npos;
+  }
+
   do_start();
 
   auto headerBlocks = generateHeaderBlocksForBlockFile(
@@ -80,7 +86,7 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   do_process_header_begin();
   do_process_header_set_file(convert_separators(h.header.string(), conv_sep));
   do_process_header_remove_args(cl ? "/bigobj" : "-c");
-  if (cl)
+  if (cl && !hasTPInCommand)
     do_process_header_add_args("/TP");
 
   if (opts.t == IndexerType::CCLS) {

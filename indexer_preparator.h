@@ -48,6 +48,7 @@ class IndexerPreparator
     bool cl;
     bool conv_sep;
     std::string inc_base;
+    bool hasTPInCommand;
 };
 
 class IndexerPreparatorWithDependencies: public IndexerPreparator
