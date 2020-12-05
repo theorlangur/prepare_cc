@@ -17,7 +17,7 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
     return {};
   }
 
-  IncludeList includes = getAllRelativeIncludes(header);
+  IncludeList includes = getAllRelativeIncludes(header, true);
   if (!includes.empty())
   {
       HeaderBlocks res;

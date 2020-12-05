@@ -124,15 +124,40 @@ std::optional<std::string> getHeaderGuard(fs::path h)
     return res;
 }
 
-IncludeList getAllRelativeIncludes(fs::path h)
+void getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l)
 {
-    IncludeList res;
-    IncludeIterator ii(h);
-    for (const Include &i : ii) {
+    IncludeIterator ii(target);
+    for (Include i : ii) {
+      if (is_in_dir(boundary, i.file))
+        getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1);
+
       if (!i.guard.empty())
-        res.emplace_back(i);
+      {
+        i.level = l;
+        includes.emplace_back(i);
+      }
       else
         lWarn() << "inc (no guard): " << i.file << "\n";
+    }
+}
+
+IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
+{
+    fs::path d = h;
+    d.remove_filename();
+    IncludeList res;
+    if (recursive)
+    {
+      getAllRelativeIncludesRecursive(d, h, res, 0);
+    }else
+    {
+      IncludeIterator ii(h);
+      for (const Include &i : ii) {
+        if (!i.guard.empty())
+          res.emplace_back(i);
+        else
+          lWarn() << "inc (no guard): " << i.file << "\n";
+      }
     }
     return res;
 }

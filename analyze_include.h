@@ -14,6 +14,7 @@ struct Include
     int lineNumber;
     std::string guard;
     fs::path file;
+    int level = 0;
 
     Include() = default;
     Include(int l, std::string g, fs::path f): lineNumber(l), guard(std::move(g)), file(std::move(f)) {}
@@ -28,7 +29,7 @@ struct IncludeConstSpan
 };
 
 std::optional<std::string> getHeaderGuard(fs::path h);
-IncludeList getAllRelativeIncludes(fs::path h);
+IncludeList getAllRelativeIncludes(fs::path h, bool recursive);
 std::optional<Include> getNthRelativeInclude(fs::path h, int n = 1);
 std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& close_to, int skip = 0);
 

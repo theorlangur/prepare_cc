@@ -86,7 +86,7 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   do_process_header_begin();
   do_process_header_set_file(convert_separators(h.header.string(), conv_sep));
   do_process_header_remove_args(cl ? "/bigobj" : "-c");
-  if (cl && !hasTPInCommand)
+  if (cl/* && !hasTPInCommand*/)
     do_process_header_add_args("/TP");
 
   if (opts.t == IndexerType::CCLS) {
