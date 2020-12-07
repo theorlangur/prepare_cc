@@ -70,8 +70,14 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
 			  _before << "#define " << i->guard << "\n";
 			  _before << "#endif\n";
           }
+          int lev = i->level;
           for (auto j = i + 1; j != includes.end(); ++j)
           {
+              if (j->level < lev)
+              {
+                  lev = j->level;
+                  continue;//when popping up we don't block outer header files
+              }
               if (!separate_includes)
 				  _before << "#define " << j->guard << "\n";
               else
