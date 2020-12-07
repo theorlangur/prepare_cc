@@ -6,6 +6,7 @@
 #include <ios>
 #include <string_view>
 #include <algorithm>
+#include <set>
 
 #include "log.h"
 
@@ -124,12 +125,21 @@ std::optional<std::string> getHeaderGuard(fs::path h)
     return res;
 }
 
-void getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l)
+
+
+void getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, std::set<fs::path> &visited)
 {
+    if (visited.find(target) != visited.end())
+    {
+        lWarn() << "attempting to again go inside " << target << "\n";
+        return;
+    }
+
+    visited.insert(target);
     IncludeIterator ii(target);
     for (Include i : ii) {
       if (is_in_dir(boundary, i.file))
-        getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1);
+        getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1, visited);
 
       if (!i.guard.empty())
       {
@@ -148,7 +158,8 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
     IncludeList res;
     if (recursive)
     {
-      getAllRelativeIncludesRecursive(d, h, res, 0);
+	  std::set<fs::path> visited;
+      getAllRelativeIncludesRecursive(d, h, res, 0, visited);
     }else
     {
       IncludeIterator ii(h);
