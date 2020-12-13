@@ -45,7 +45,7 @@ public:
 
       IncludeIterator &i;
   };
-  IncludeIterator(fs::path t);
+  IncludeIterator(fs::path t, bool headerGuardOnIteration = true);
 
   bool next();
   bool at_end() const;
@@ -54,6 +54,8 @@ public:
 
   auto begin() {auto i = Iter{*this}; ++i; return i;}
   auto end() {return Stop{};}
+
+  std::string&& getTargetGuard();
 private:
   fs::path m_Target;
   fs::path m_TargetDir;
@@ -63,6 +65,8 @@ private:
   std::ifstream m_File;
   int m_Line = 0;
   bool m_First = true;
+  bool m_HeaderGuardOnIteration = true;
+  std::string m_TargetGuard;
 };
 
 #endif

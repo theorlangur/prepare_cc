@@ -126,20 +126,26 @@ std::optional<std::string> getHeaderGuard(fs::path h)
 }
 
 
-
-void getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, std::set<fs::path> &visited)
+//returns guard for the target if exists
+std::string getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, std::set<fs::path> &visited)
 {
     if (visited.find(target) != visited.end())
     {
         lWarn() << "attempting to again go inside " << target << "\n";
-        return;
+        return {};
     }
 
     visited.insert(target);
-    IncludeIterator ii(target);
+    IncludeIterator ii(target, false);
     for (Include i : ii) {
       if (is_in_dir(boundary, i.file))
-        getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1, visited);
+        i.guard = getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1, visited);
+      else
+      {
+        auto hg = getHeaderGuard(i.file);
+        if (hg.has_value())
+          i.guard = *hg;
+      }
 
       if (!i.guard.empty())
       {
@@ -149,6 +155,8 @@ void getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &t
       else
         lWarn() << "inc (no guard): " << i.file << "\n";
     }
+
+    return ii.getTargetGuard();
 }
 
 IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
@@ -158,7 +166,7 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
     IncludeList res;
     if (recursive)
     {
-	  std::set<fs::path> visited;
+      std::set<fs::path> visited;
       getAllRelativeIncludesRecursive(d, h, res, 0, visited);
     }else
     {
@@ -213,9 +221,10 @@ std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& cl
   return res;
 }
 
-  IncludeIterator::IncludeIterator(fs::path t):
+  IncludeIterator::IncludeIterator(fs::path t, bool headerGuardOnIteration/* = true*/):
     m_TargetDir(t),
-    m_File(t, std::ios_base::in)
+    m_File(t, std::ios_base::in),
+    m_HeaderGuardOnIteration(headerGuardOnIteration)
   {
     m_TargetDir.remove_filename();
   }
@@ -244,13 +253,21 @@ std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& cl
               inc_path += inc_str;
               inc_path = inc_path.lexically_normal();
             }
-            auto guard = getHeaderGuard(inc_path);
+            auto guard = m_HeaderGuardOnIteration ? getHeaderGuard(inc_path) : std::optional<std::string>();
             std::string _g;
             if (guard.has_value())
                 _g = std::move(*guard);
 
             m_Include = Include(m_Line, std::move(_g), std::move(inc_path));
             res = true;
+        }
+        if (!m_HeaderGuardOnIteration && m_TargetGuard.empty())
+        {
+          auto guard = matchIfndefDirective(sv);
+          if (guard.has_value())
+          {
+              m_TargetGuard = *guard;
+          }
         }
         ++m_Line;
         return res;
@@ -268,6 +285,11 @@ std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& cl
   const Include& IncludeIterator::getInclude() const
   {
     return m_Include;
+  }
+
+  std::string&& IncludeIterator::getTargetGuard()
+  {
+    return std::move(m_TargetGuard);
   }
 
   void IncludeIterator::Iter::operator++()
