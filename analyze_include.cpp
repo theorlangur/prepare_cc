@@ -7,6 +7,7 @@
 #include <string_view>
 #include <algorithm>
 #include <set>
+#include <thread>
 
 #include "log.h"
 
@@ -167,7 +168,45 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
     if (recursive)
     {
       std::set<fs::path> visited;
-      getAllRelativeIncludesRecursive(d, h, res, 0, visited);
+        IncludeList temps;
+        IncludeIterator ii(h, false);
+        for (Include i : ii) {
+          temps.emplace_back(i);
+        }
+        size_t total = temps.size();
+        size_t threads_count = std::thread::hardware_concurrency();
+        size_t per_thread = total / threads_count;
+        std::vector<IncludeList> par_results(threads_count);
+
+        auto work_item = [&](size_t idx)
+        {
+          size_t from = idx * per_thread;
+          size_t to = from + per_thread;
+          if ((idx + 1) == threads_count)
+            to = total;
+          IncludeList &res = par_results[idx];
+          for(size_t ii = from; ii < to; ++ii)
+          {
+            Include &i = temps[ii];
+            if (is_in_dir(d, i.file))
+              i.guard = getAllRelativeIncludesRecursive(d, i.file, res, 1, visited);
+            else
+            {
+              auto hg = getHeaderGuard(i.file);
+              if (hg.has_value())
+                i.guard = *hg;
+            }
+
+            if (!i.guard.empty())
+            {
+              i.level = 0;
+              res.emplace_back(i);
+            }
+            else
+              lWarn() << "inc (no guard): " << i.file << "\n";
+          }
+        };
+      //getAllRelativeIncludesRecursive(d, h, res, 0, visited);
     }else
     {
       IncludeIterator ii(h);
