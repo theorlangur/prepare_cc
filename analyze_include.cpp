@@ -177,6 +177,8 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
         size_t threads_count = std::thread::hardware_concurrency();
         size_t per_thread = total / threads_count;
         std::vector<IncludeList> par_results(threads_count);
+        std::vector<std::thread> threads;
+        threads.reserve(threads_count);
 
         auto work_item = [&](size_t idx)
         {
@@ -206,6 +208,20 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
               lWarn() << "inc (no guard): " << i.file << "\n";
           }
         };
+        for(size_t i = 0; i < threads_count; ++i)
+          threads.emplace_back(work_item, i);
+
+        size_t total_res_cnt = 0;
+        size_t idx = 0;
+        for(auto &t : threads)
+        {
+          t.join();
+          total_res_cnt += par_results[idx++].size();
+        }
+
+        res.reserve(total_res_cnt);
+        for(auto &r : par_results)
+          res.insert(res.end(), r.begin(), r.end());
       //getAllRelativeIncludesRecursive(d, h, res, 0, visited);
     }else
     {
