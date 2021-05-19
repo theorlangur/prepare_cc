@@ -171,6 +171,167 @@ std::string CCOptions::modify_command(std::string cmd) const {
   return std::move(cmd);
 }
 
+void CCOptions::read_pch_config(std::string key, nlohmann::json &obj, const fs::path &base)
+{
+  if (!obj.is_array())
+  {
+    lWarn() << "Expected 'array' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
+    return;
+  }
+  lInfo() << "Adding '"<<key<<"':\n";
+  for (auto const &fout : obj) {
+    if (fout.is_object())
+    {
+      if (fout.contains("file"))
+      {
+        PCH pch;
+        pch.file = fout["file"].get<std::string>();
+        if (pch.file.is_relative())
+          pch.file = base / pch.file;
+        
+        if (fout.contains("pch"))
+        {
+          pch.dep = fout["pch"].get<std::string>();
+          if (pch.dep.is_relative())
+            pch.dep = base / pch.dep;
+        }
+
+        if (!fs::exists(pch.file))
+        {
+          lWarn() << "PCH target: " << pch.file << " doesn't exist. Skipping\n";
+          continue;
+        }
+
+        if (!pch.dep.empty() && !fs::exists(pch.dep))
+        {
+          lWarn() << "PCH dependency: " << pch.dep << " doesn't exist. Skipping\n";
+          continue;
+        }
+
+        PCHs.push_back(pch);
+      }else
+      {
+        lWarn() << "No 'file' key for PCH found. Skipping\n";
+      }
+    }else
+    {
+      lWarn() << "Expected 'object'.\nGot " << fout.type_name() << " instead. Skipping.\n";
+    }
+  }
+}
+
+void CCOptions::read_replace_list(std::string key, nlohmann::json &obj, const fs::path &base)
+{
+  if (!obj.is_array())
+  {
+    lWarn() << "Expected 'array' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
+    return;
+  }
+  lInfo() << "Adding '"<<key<<"':\n";
+  for (auto const &fout : obj) {
+    std::string reStr;
+    Replace r;
+    if (fout.is_string()) {
+      r.replace = std::regex(reStr = fout.get<std::string>());
+    } else if (fout.is_object() && fout.contains("what")) {
+      r.replace = std::regex(reStr = fout["what"].get<std::string>());
+      if (fout.contains("with"))
+        r.with = fout["with"];
+    } else
+      throw "unsupported replace element format";
+    lInfo() << "Replace '" << reStr << "' with '"<< r.with <<"'\n";
+    command_modifiers.push_back(r);
+  }
+}
+
+void CCOptions::read_skip_deps(std::string key, nlohmann::json &obj, const fs::path &base)
+{
+  if (!obj.is_array())
+  {
+    lWarn() << "Expected 'array' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
+    return;
+  }
+  lInfo() << "Adding 'skip-deps'\n";
+  for(auto const &skip : obj)
+  {
+    if (skip.is_string())
+      skip_dep.push_back(std::regex(skip.get<std::string>()));
+    else
+      throw "for skipping dependency a string representing a regular expression was expected";
+  }
+}
+
+void CCOptions::read_str(std::string key, nlohmann::json &obj, const fs::path &base, StrMemPtr ptr)
+{
+  if (!obj.is_string())
+  {
+    lWarn() << "Expected 'string' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
+    return;
+  }
+  this->*ptr = obj.get<std::string>();
+  lInfo() << "got '" << key << "' field with value:" << this->*ptr << "\n";
+}
+
+void CCOptions::read_path(std::string key, nlohmann::json &obj, const fs::path &base, PathMemPtr ptr)
+{
+  if (!obj.is_string())
+  {
+    lWarn() << "Expected 'string' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
+    return;
+  }
+  this->*ptr = obj.get<std::string>();
+  lInfo() << "got '" << key << "' field with value:" << this->*ptr << "\n";
+  if ((this->*ptr).is_relative())
+  {
+    this->*ptr = base / this->*ptr;
+    lInfo() << "'"<< key << "' in absolute form:" << this->*ptr
+            << "\n";
+  }
+}
+
+void CCOptions::read_bool(std::string key, nlohmann::json &obj, const fs::path &base, BoolMemPtr ptr)
+{
+  if (!obj.is_boolean())
+  {
+    lWarn() << "Expected 'boolean' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
+    return;
+  }
+  this->*ptr = obj.get<bool>();
+  lInfo() << "'"<< key <<"':" << this->*ptr << "\n";
+}
+
+void CCOptions::read_path_list(std::string key, nlohmann::json &obj, const fs::path &base, PathVecMemPtr ptr)
+{
+  if (!obj.is_string())
+  {
+    lWarn() << "Expected 'array' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
+    return;
+  }
+  lInfo() << "Adding '"<<key<<"':\n";
+  for (auto const &fin : obj) {
+    fs::path fin_p = fin.get<std::string>();
+    if (fin_p.is_relative())
+      fin_p = base / fin_p;
+    fin_p = fin_p.lexically_normal();
+    lInfo() << fin_p << "\n";
+    (this->*ptr).push_back(fin_p);
+  }
+}
+
+std::map<std::string, CCOptions::Reader> CCOptions::g_OptionReaders({
+  {"from", &CCOptions::read_tpl<&CCOptions::compile_commands_json>},
+  {"to", &CCOptions::read_tpl<&CCOptions::save_to>},
+  {"clang-cl", &CCOptions::read_tpl<&CCOptions::clang_cl>},
+  {"include-dir", &CCOptions::read_tpl<&CCOptions::include_dir>},
+  {"include-per-file", &CCOptions::read_tpl<&CCOptions::include_per_file>},
+  {"no-dependencies", &CCOptions::read_tpl<&CCOptions::no_dependencies>},
+  {"filter-in", &CCOptions::read_tpl<&CCOptions::filter_in>},
+  {"filter-out", &CCOptions::read_tpl<&CCOptions::filter_out>},
+  {"cmd-modifiers", &CCOptions::read_replace_list},
+  {"skip-deps", &CCOptions::read_skip_deps},
+  {"pch", &CCOptions::read_pch_config},
+});
+
 bool CCOptions::from_json_file(fs::path config_json, const fs::path &base) 
 {
     if (!base.empty() && !base.is_absolute())
@@ -187,98 +348,10 @@ bool CCOptions::from_json_file(fs::path config_json, const fs::path &base)
       if (cfg.is_object())
       {
         for (auto const &e : cfg.items()) {
-          if (e.key() == "from" && e.value().is_string()) {
-            compile_commands_json = e.value().get<std::string>();
-            lInfo() << "got 'from' field with value:" << compile_commands_json << "\n";
-            if (compile_commands_json.is_relative())
-            {
-              compile_commands_json = base / compile_commands_json;
-              lInfo() << "'from' in absolute form:" << compile_commands_json
-                      << "\n";
-            }
-          } else if (e.key() == "to" && e.value().is_string()) {
-            save_to = e.value().get<std::string>();
-            lInfo() << "got 'to' field with value:" << save_to << "\n";
-            if (save_to.is_relative())
-            {
-              save_to = base / save_to;
-              lInfo() << "'to' in absolute form:" << save_to << "\n";
-            }
-          } 
-          else if (e.key() == "clang-cl" && e.value().is_boolean())
+          auto it = g_OptionReaders.find(e.key());
+          if (it != g_OptionReaders.end())
           {
-            clang_cl = e.value().get<bool>();
-            lInfo() << "'clang-cl':" << clang_cl << "\n";
-          }
-          else if (e.key() == "include-dir" && e.value().is_string())
-          {
-              include_dir = e.value().get<std::string>();
-              lInfo() << "'include-dir':" << include_dir << "\n";
-          }
-          else if (e.key() == "include-per-file" && e.value().is_boolean())
-          {
-            include_per_file = e.value().get<bool>();
-            lInfo() << "'include-per-file':" << include_per_file << "\n";
-          }
-          else if (e.key() == "no-dependencies" && e.value().is_boolean())
-          {
-            no_dependencies = e.value().get<bool>();
-            lInfo() << "'no-dependencies':" << no_dependencies << "\n";
-          }
-          else if (e.key() == "type" && e.value().is_string()) {
-            lInfo() << "'type':" << e.value() << "\n";
-            if (e.value() == "clangd")
-              t = IndexerType::ClangD;
-            else if (e.value() == "ccls")
-              t = IndexerType::CCLS;
-            else
-             lWarn() << "unknown option for 'type' field:" << e.value() << "\n";
-          } else if (e.key() == "filter-in" && e.value().is_array()) {
-            lInfo() << "Adding 'filter-in':\n";
-            for (auto const &fin : e.value()) {
-              fs::path fin_p = fin.get<std::string>();
-              if (fin_p.is_relative())
-                fin_p = base / fin_p;
-              fin_p = fin_p.lexically_normal();
-              lInfo() << fin_p << "\n";
-              filter_in.push_back(fin_p);
-            }
-          } else if (e.key() == "filter-out" && e.value().is_array()) {
-            lInfo() << "Adding 'filter-out':\n";
-            for (auto const &fout : e.value()) {
-              fs::path fout_p = fout.get<std::string>();
-              if (fout_p.is_relative())
-                fout_p = base / fout_p;
-              fout_p = fout_p.lexically_normal();
-              lInfo() << fout_p << "\n";
-              filter_out.push_back(fout_p);
-            }
-          } else if (e.key() == "cmd-modifiers" && e.value().is_array()) {
-            lInfo() << "Adding 'cmd-modifiers':\n";
-            for (auto const &fout : e.value()) {
-              std::string reStr;
-              Replace r;
-              if (fout.is_string()) {
-                r.replace = std::regex(reStr = fout.get<std::string>());
-              } else if (fout.is_object() && fout.contains("what")) {
-                r.replace = std::regex(reStr = fout["what"].get<std::string>());
-                if (fout.contains("with"))
-                  r.with = fout["with"];
-              } else
-                throw "unsupported replace element format";
-              lInfo() << "Replace '" << reStr << "' with '"<< r.with <<"'\n";
-              command_modifiers.push_back(r);
-            }
-          }else if (e.key() == "skip-deps" && e.value().is_array())
-          {
-            lInfo() << "Adding 'skip-deps'\n";
-            for(auto const &skip : e.value())
-            {
-              if (skip.is_string())
-                skip_dep.push_back(std::regex(skip.get<std::string>()));
-              else
-                throw "for skipping dependency a string representing a regular expression was expected";
-            }
+            (this->*(it->second))(e.key(), e.value(), base);
           }
         }
         return true;
