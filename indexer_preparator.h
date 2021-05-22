@@ -14,11 +14,22 @@ class IndexerPreparator
     IndexerPreparator(CCOptions const& opts);
     virtual ~IndexerPreparator() = default;
 
+    void QuickPrepare(nlohmann::json &obj, fs::path target, json_list &to_add);
     void Prepare(nlohmann::json &obj, fs::path target, json_list &to_add);
   protected:
+    std::string add_pch_include(std::string cmd, fs::path pch) const; 
+    void add_header_type(std::string &cmd) const; 
+    void add_target(std::string &cmd, std::string const& tgt) const; 
+    bool try_apply_pch(nlohmann::json &obj, fs::path target) const;
+
+
     virtual void do_start() = 0;
     virtual void do_finalize() = 0;
     virtual void do_closest_cpp_include(Include &inc) = 0;
+
+    void do_check_pch();
+    using pch_it = decltype(CCOptions::PCHs)::const_iterator;
+    void add_single_pch(pch_it i);
 
     virtual void do_process_header_begin() = 0;
     virtual void do_process_header_set_file(std::string f) = 0;
@@ -40,15 +51,22 @@ class IndexerPreparator
     std::string inc_after;
     fs::path dir_stdafx;
     HeaderBlocks::Header *pHeader;//current header
+    fs::path inc_pch;
+    fs::path inc_pch_base;
 
     HeaderBlocks *pHeaderBlocks;
+
+    using pch_index_t = int;
+    std::map<fs::path, pch_index_t> pchForPath;
 
     //config stuff
     CCOptions const& opts;
     bool cl;
-    bool conv_sep;
-    std::string inc_base;
+    std::string_view inc_base;
+    std::string_view compile_target;
+    std::string_view define_opt;
     bool hasTPInCommand;
+    decltype(CCOptions::PCHs) PCHs;
 };
 
 class IndexerPreparatorWithDependencies: public IndexerPreparator
@@ -89,7 +107,6 @@ class IndexerPreparatorCanonical: public IndexerPreparator
     virtual void do_header_blocks_end() override;
 
     std::string cleaned_cmd;//no compile target, no output
-    std::string compile_option;
 
     nlohmann::json entry;
     std::string entry_cmd;

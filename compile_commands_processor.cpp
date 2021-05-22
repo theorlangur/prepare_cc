@@ -110,23 +110,15 @@ bool processCompileCommandsTo(CCOptions const& options)
         //only once per directory
         if (seen_paths.find(d) != seen_paths.end())
         {
-            to_add.emplace_back(std::move(entry));
-            lInfo() << "This path was already processed so adding this as-is:" << file << "\n";
+            lInfo() << "This path was already processed, taking quick path for :" << file << "\n";
+            indexer->QuickPrepare(entry, file, to_add);
             return true;
         }
 
         seen_paths.insert(d);
 
-        if (options.t == IndexerType::CCLS) 
-        {
-          lInfo() << "Preparation for ccls: "
-                  << file << "\n";
-        }
-        else if (options.t == IndexerType::ClangD)
-        {
-          lInfo() << "Preparation for clangd: "
-                  << file << "\n";
-        }
+        lInfo() << "Preparation: "
+                << file << "\n";
 
         indexer->Prepare(entry, file, to_add);
 
@@ -196,16 +188,32 @@ void CCOptions::read_pch_config(std::string key, nlohmann::json &obj, const fs::
             pch.dep = base / pch.dep;
         }
 
+        if (fout.contains("cmd"))
+          pch.cmd = fout["cmd"].get<std::string>();
+
+        if (fout.contains("cmd-from"))
+        {
+          pch.cmd_from = fout["cmd-from"].get<std::string>();
+          if (pch.dep.is_relative())
+            pch.cmd_from = base / pch.cmd_from;
+        }
+
+        if (fout.contains("apply-for"))
+        {
+          nlohmann::json apply_for = fout["apply-for"];
+          read_path_list("apply-for", apply_for, base, pch.apply_for);
+        }
+
         if (!fs::exists(pch.file))
         {
-          lWarn() << "PCH target: " << pch.file << " doesn't exist. Skipping\n";
-          continue;
+          lErr() << "PCH target: " << pch.file << " doesn't exist. Skipping\n";
+          throw std::runtime_error("PCH file must exist!");
         }
 
         if (!pch.dep.empty() && !fs::exists(pch.dep))
         {
-          lWarn() << "PCH dependency: " << pch.dep << " doesn't exist. Skipping\n";
-          continue;
+          lErr() << "PCH dependency: " << pch.dep << " doesn't exist. Skipping\n";
+          throw std::runtime_error("PCH dependency if specified must exist!");
         }
 
         PCHs.push_back(pch);
@@ -261,48 +269,48 @@ void CCOptions::read_skip_deps(std::string key, nlohmann::json &obj, const fs::p
   }
 }
 
-void CCOptions::read_str(std::string key, nlohmann::json &obj, const fs::path &base, StrMemPtr ptr)
+void CCOptions::read_str(std::string key, nlohmann::json &obj, const fs::path &base, StrRef ref)
 {
   if (!obj.is_string())
   {
     lWarn() << "Expected 'string' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
     return;
   }
-  this->*ptr = obj.get<std::string>();
-  lInfo() << "got '" << key << "' field with value:" << this->*ptr << "\n";
+  ref = obj.get<std::string>();
+  lInfo() << "got '" << key << "' field with value:" << ref << "\n";
 }
 
-void CCOptions::read_path(std::string key, nlohmann::json &obj, const fs::path &base, PathMemPtr ptr)
+void CCOptions::read_path(std::string key, nlohmann::json &obj, const fs::path &base, PathRef ref)
 {
   if (!obj.is_string())
   {
     lWarn() << "Expected 'string' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
     return;
   }
-  this->*ptr = obj.get<std::string>();
-  lInfo() << "got '" << key << "' field with value:" << this->*ptr << "\n";
-  if ((this->*ptr).is_relative())
+  ref = obj.get<std::string>();
+  lInfo() << "got '" << key << "' field with value:" << ref << "\n";
+  if (ref.is_relative())
   {
-    this->*ptr = base / this->*ptr;
-    lInfo() << "'"<< key << "' in absolute form:" << this->*ptr
+    ref = base / ref;
+    lInfo() << "'"<< key << "' in absolute form:" << ref
             << "\n";
   }
 }
 
-void CCOptions::read_bool(std::string key, nlohmann::json &obj, const fs::path &base, BoolMemPtr ptr)
+void CCOptions::read_bool(std::string key, nlohmann::json &obj, const fs::path &base, BoolRef ref)
 {
   if (!obj.is_boolean())
   {
     lWarn() << "Expected 'boolean' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
     return;
   }
-  this->*ptr = obj.get<bool>();
-  lInfo() << "'"<< key <<"':" << this->*ptr << "\n";
+  ref = obj.get<bool>();
+  lInfo() << "'"<< key <<"':" << ref << "\n";
 }
 
-void CCOptions::read_path_list(std::string key, nlohmann::json &obj, const fs::path &base, PathVecMemPtr ptr)
+void CCOptions::read_path_list(std::string key, nlohmann::json &obj, const fs::path &base, PathVecRef ref)
 {
-  if (!obj.is_string())
+  if (!obj.is_array())
   {
     lWarn() << "Expected 'array' type for key '" << key << "'.\nGot " << obj.type_name() << " instead. Skipping.\n";
     return;
@@ -314,11 +322,11 @@ void CCOptions::read_path_list(std::string key, nlohmann::json &obj, const fs::p
       fin_p = base / fin_p;
     fin_p = fin_p.lexically_normal();
     lInfo() << fin_p << "\n";
-    (this->*ptr).push_back(fin_p);
+    ref.push_back(fin_p);
   }
 }
 
-std::map<std::string, CCOptions::Reader> CCOptions::g_OptionReaders({
+const std::map<std::string, CCOptions::Reader> CCOptions::g_OptionReaders({
   {"from", &CCOptions::read_tpl<&CCOptions::compile_commands_json>},
   {"to", &CCOptions::read_tpl<&CCOptions::save_to>},
   {"clang-cl", &CCOptions::read_tpl<&CCOptions::clang_cl>},
@@ -389,4 +397,12 @@ bool is_in_dir(fs::path const& parent, fs::path const& child)
 {
   fs::path::iterator dummy;
   return is_in_dir(parent, child, dummy);
+}
+
+
+bool CCOptions::PCH::can_be_applied_for(fs::path const& p) const
+{
+  return std::find_if(apply_for.begin(), apply_for.end(), [&](const fs::path &d){
+    return is_in_dir(d, p);
+  }) != apply_for.end();
 }

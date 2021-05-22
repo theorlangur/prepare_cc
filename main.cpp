@@ -94,18 +94,6 @@ int main(int argc, char *argv[])
             else
                 print_help = true;
         }
-        else if (arg == "--type") {
-            ++i;
-            if (i < argc) {
-                std::string_view _t = argv[i];
-                if (_t == "ccls")
-                    opts.t = IndexerType::CCLS;
-                else if (_t == "clangd")
-                    opts.t = IndexerType::ClangD;
-            }
-            else
-                print_help = true;
-        }
         else if (arg == "--verbose") {
             ++i;
             if (i < argc) {

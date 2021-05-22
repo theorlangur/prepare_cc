@@ -1,21 +1,86 @@
 #include "indexer_preparator.h"
+#include "compile_commands_processor.h"
 #include "log.h"
+#include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <iterator>
 
-std::string convert_separators(std::string in, bool convert) {
-  if (convert)
-    std::replace(in.begin(), in.end(), '\\', '/');
-  return in;
-}
+void remove_search_and_next(std::string &where, std::string_view const & what);
 
 /*************************************************************************/
 /*IndexerPreparator                                                      */
 /*************************************************************************/
 IndexerPreparator::IndexerPreparator(CCOptions const &opts)
     : opts(opts), cl(opts.clang_cl),
-      conv_sep(cl && opts.t == IndexerType::CCLS),
-      inc_base(cl ? "/clang:--include" : "--include=") {}
+      inc_base(cl ? "/clang:--include" : "--include="),
+      compile_target(cl ? "/bigobj" : "-c"),
+      define_opt(cl ? "/D " : "-D"),
+      PCHs(opts.PCHs) {}
+
+std::string IndexerPreparator::add_pch_include(std::string cmd, fs::path pch) const
+{
+    std::string inc_stdafx{inc_base};
+    inc_stdafx += pch;
+    size_t pos = cmd.find("include");
+    if (pos == std::string::npos)
+      pos = cmd.find(' ');
+    else
+      pos = cmd.rfind(' ', pos);
+
+    if (pos == std::string::npos)
+      pos = cmd.size();
+
+    inc_stdafx.insert(0, " ");
+    cmd.insert(pos, inc_stdafx);
+    return std::move(cmd);
+} 
+
+void IndexerPreparator::add_header_type(std::string &cmd) const
+{
+    if (cl)
+      cmd += " /clang:";
+    else
+      cmd += " ";
+    cmd += "-xc++-header";
+} 
+
+void IndexerPreparator::add_target(std::string &cmd, std::string const& tgt) const
+{
+    cmd = cmd + " " + std::string(compile_target) + " " + tgt;
+} 
+
+bool IndexerPreparator::try_apply_pch(nlohmann::json &obj, fs::path target) const
+{
+  fs::path dir = target;
+  dir.remove_filename();
+  if (auto i = pchForPath.find(dir); i != pchForPath.end())
+  {
+    obj["command"] = add_pch_include(obj["command"], PCHs[i->second].file);
+    return true;
+  }else
+  {
+    auto pchIt = std::find_if(PCHs.begin(), PCHs.end(), [&](const CCOptions::PCH &p){
+      return p.can_be_applied_for(target);
+    });
+
+    if (pchIt != PCHs.end())
+    {
+      obj["command"] = add_pch_include(obj["command"], pchIt->file);
+      return true;
+    }
+  }
+  return false;
+}
+
+void IndexerPreparator::QuickPrepare(nlohmann::json &obj, fs::path target, json_list &to_add)
+{
+  fs::path dir = target;
+  dir.remove_filename();
+  if (auto i = pchForPath.find(dir); i != pchForPath.end())
+    obj["command"] = add_pch_include(obj["command"], PCHs[i->second].file);
+  to_add.emplace_back(std::move(obj));
+}
 
 void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
                                 json_list &to_add) {
@@ -35,6 +100,11 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
       this->target, opts.include_dir, opts.include_per_file);
   if (headerBlocks.has_value() && !headerBlocks->headers.empty()) {
     pHeaderBlocks = &*headerBlocks;
+
+    do_check_pch();
+
+    if (!inc_pch.empty())
+      (*pObj)["command"] = add_pch_include((*pObj)["command"], inc_pch);
 
     inc_stdafx = inc_base;
     inc_stdafx += headerBlocks->target.string();
@@ -81,24 +151,99 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
   do_finalize();
 }
 
+void IndexerPreparator::add_single_pch(pch_it i)
+{
+  std::string cmd;
+  if (!i->cmd.empty())
+    cmd = i->cmd;
+  else
+  {
+    cmd = (*pObj)["command"];
+    remove_search_and_next(cmd, compile_target);
+    if (!cl) remove_search_and_next(cmd, "-o");
+
+    if (!i->dep.empty())
+      cmd = add_pch_include(cmd, i->dep);
+
+    add_header_type(cmd);
+    add_target(cmd, i->file.string());
+  }
+
+  nlohmann::json pch_cmd;
+  pch_cmd["directory"] = (*pObj)["directory"];
+  pch_cmd["file"] = i->file;
+  pch_cmd["command"] = cmd;
+
+  pToAdd->emplace_back(std::move(pch_cmd));
+}
+
+void IndexerPreparator::do_check_pch()
+{
+  inc_pch.clear();
+  inc_pch_base.clear();
+  fs::path stdafx = pHeaderBlocks->target;
+  auto i = std::find_if(PCHs.begin(), PCHs.end(), [&](CCOptions::PCH &p){return p.file == stdafx;}); 
+  if (i == PCHs.end())
+  {
+    auto i = std::find_if(PCHs.begin(), PCHs.end(), [&](const CCOptions::PCH &p){
+      return p.can_be_applied_for(target);
+    });
+
+    if (i != PCHs.end())
+    {
+      inc_pch = i->file;
+      inc_pch_base = i->dep;
+
+      fs::path dir = inc_pch;
+      dir.remove_filename();
+      pchForPath[dir] = std::distance(PCHs.begin(), i);
+    }
+    return;
+  }
+
+  fs::path dir = stdafx;
+  dir.remove_filename();
+  pchForPath[dir] = std::distance(PCHs.begin(), i);
+
+  inc_pch = stdafx;
+  inc_pch_base = i->dep;
+
+  add_single_pch(i);
+
+  //find and add dedicated for the same path
+  i = PCHs.begin();
+  while(true)
+  {
+    i = std::find_if(i, PCHs.end(), [&](CCOptions::PCH const& p){return p.cmd_from == stdafx;});
+    if (i == PCHs.end())
+      break;
+    add_single_pch(i);
+    ++i;
+  }
+}
+
 void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   pHeader = &h;
   do_process_header_begin();
-  do_process_header_set_file(convert_separators(h.header.string(), conv_sep));
-  do_process_header_remove_args(cl ? "/bigobj" : "-c");
+  do_process_header_set_file(h.header.string());
+  do_process_header_remove_args(compile_target);
+
   if (cl/* && !hasTPInCommand*/)
     do_process_header_add_args("/TP");
 
-  if (opts.t == IndexerType::CCLS) {
-    if (cl)
-      do_process_header_add_args("/bigobj");
-    else
-      do_process_header_add_args("-c");
-    do_process_header_add_args(pHeaderBlocks->dummy_cpp.string());
+  if (!inc_pch.empty())
+  {
+    do_process_header_remove_args(inc_base);
+    if (inc_pch_base.empty())
+    {
+      std::string pch_base(inc_base);
+      pch_base += inc_pch_base;
+      do_process_header_add_args(pch_base);//--include=<path-to-pch>
+    }
   }
 
   if (!h.define.empty()) {
-    std::string def(cl ? "/D " : "-D");
+    std::string def(define_opt);
     def += h.define;
     do_process_header_add_args(def);
   }
@@ -128,11 +273,6 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
 IndexerPreparatorWithDependencies::IndexerPreparatorWithDependencies(
     CCOptions const &opts)
     : IndexerPreparator(opts) {
-  if (!cl)
-    rem_c.push_back("1:-c"); // remove compile target of the original command
-  else
-    rem_c.push_back(
-        "1:/bigobj"); // remove compile target of the original command
 }
 
 void IndexerPreparatorWithDependencies::do_start() { deps.clear(); }
@@ -144,7 +284,7 @@ void IndexerPreparatorWithDependencies::do_finalize() {
 void IndexerPreparatorWithDependencies::do_closest_cpp_include(
     Include &inc) {
   nlohmann::json cpp_dep;
-  cpp_dep["file"] = convert_separators(inc.file.string(), conv_sep);
+  cpp_dep["file"] = inc.file.string();
   cpp_dep["add"].push_back(inc_stdafx);
   lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
   deps.push_back(cpp_dep);
@@ -153,16 +293,18 @@ void IndexerPreparatorWithDependencies::do_closest_cpp_include(
 void IndexerPreparatorWithDependencies::do_process_header_begin() {
   h_dep.clear();
   add_args.clear();
+  rem_c.clear();
 }
 void IndexerPreparatorWithDependencies::do_process_header_set_file(
     std::string f) {
   h_dep["file"] = f;
-
-  h_dep["remove"] = rem_c;
 }
 void IndexerPreparatorWithDependencies::do_process_header_remove_args(
     std::string_view what) {
   // dummy
+  std::string t("1:");
+  t += what;
+  rem_c.push_back(t);
 }
 void IndexerPreparatorWithDependencies::do_process_header_add_args(
     std::string what) {
@@ -170,6 +312,7 @@ void IndexerPreparatorWithDependencies::do_process_header_add_args(
 }
 void IndexerPreparatorWithDependencies::do_process_header_end() {
   h_dep["add"] = add_args;
+  h_dep["remove"] = rem_c;
   deps.push_back(h_dep);
 }
 
@@ -215,15 +358,11 @@ void remove_search_and_next(std::string &where, std::string_view const & what)
 IndexerPreparatorCanonical::IndexerPreparatorCanonical(CCOptions const &opts)
     : IndexerPreparator(opts) 
     {
-        if (cl)
-            compile_option = "/bigobj";//stupid but ok...
-        else
-            compile_option = "-c";
     }
 void IndexerPreparatorCanonical::do_start()
 {
     cleaned_cmd = (*pObj)["command"];
-    remove_search_and_next(cleaned_cmd, compile_option);
+    remove_search_and_next(cleaned_cmd, compile_target);
     if (!cl)
         remove_search_and_next(cleaned_cmd, "-o");
 }
@@ -233,10 +372,10 @@ void IndexerPreparatorCanonical::do_finalize()
 void IndexerPreparatorCanonical::do_closest_cpp_include(Include &inc)
 {
   nlohmann::json cpp_dep = *pObj;
-  std::string f = convert_separators(inc.file.string(), conv_sep);
+  std::string f = inc.file.string();
   cpp_dep["file"] = f;
   std::string cmd = cleaned_cmd;
-  cmd = cmd + " " + compile_option + " " + f + " " + inc_stdafx;
+  cmd = cmd + " " + std::string(compile_target) + " " + f + " " + inc_stdafx;
   cpp_dep["command"] = cmd;
   lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
   pToAdd->emplace_back(std::move(cpp_dep));
@@ -256,7 +395,7 @@ void IndexerPreparatorCanonical::do_process_header_set_file(std::string f)
 
 void IndexerPreparatorCanonical::do_process_header_remove_args(std::string_view what)
 {
-    if (what != compile_option)
+    if (what != compile_target)
         remove_search_and_next(entry_cmd, what);
 }
 
@@ -267,13 +406,8 @@ void IndexerPreparatorCanonical::do_process_header_add_args(std::string what)
 }
 void IndexerPreparatorCanonical::do_process_header_end()
 {
-    if (cl)
-      entry_cmd = entry_cmd + " /clang:";
-    else
-      entry_cmd += " ";
-    entry_cmd = entry_cmd + "-xc++-header";
-
-    entry_cmd = entry_cmd + " " + compile_option + " " + file;
+    add_header_type(entry_cmd);
+    add_target(entry_cmd, file);
 
     entry["command"] = entry_cmd;
     pToAdd->emplace_back(std::move(entry));
