@@ -201,7 +201,7 @@ void IndexerPreparator::do_check_pch()
     return;
   }
 
-  fs::path dir = stdafx;
+  fs::path dir = target;
   dir.remove_filename();
   pchForPath[dir] = std::distance(PCHs.begin(), i);
 
@@ -234,7 +234,7 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   if (!inc_pch.empty())
   {
     do_process_header_remove_args(inc_base);
-    if (inc_pch_base.empty())
+    if (!inc_pch_base.empty())
     {
       std::string pch_base(inc_base);
       pch_base += inc_pch_base;
@@ -285,7 +285,8 @@ void IndexerPreparatorWithDependencies::do_closest_cpp_include(
     Include &inc) {
   nlohmann::json cpp_dep;
   cpp_dep["file"] = inc.file.string();
-  cpp_dep["add"].push_back(inc_stdafx);
+  if (inc_pch != inc_stdafx)
+    cpp_dep["add"].push_back(inc_stdafx);
   lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
   deps.push_back(cpp_dep);
 }

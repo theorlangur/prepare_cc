@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <set>
 #include <thread>
+#include <mutex>
 
 #include "log.h"
 
@@ -127,16 +128,15 @@ std::optional<std::string> getHeaderGuard(fs::path h)
 }
 
 
+using isVisitedT = std::function<bool(fs::path const&)>;
 //returns guard for the target if exists
-std::string getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, std::set<fs::path> &visited)
+std::string getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, isVisitedT &visited)
 {
-    if (visited.find(target) != visited.end())
+    if (visited(target))
     {
-        lWarn() << "attempting to again go inside " << target << "\n";
-        return {};
+      lWarn() << "attempting to again go inside " << target << "\n";
+      return {};
     }
-
-    visited.insert(target);
     IncludeIterator ii(target, false);
     for (Include i : ii) {
       if (is_in_dir(boundary, i.file))
@@ -167,7 +167,6 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
     IncludeList res;
     if (recursive)
     {
-      std::set<fs::path> visited;
         IncludeList temps;
         IncludeIterator ii(h, false);
         for (Include i : ii) {
@@ -179,6 +178,16 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
         std::vector<IncludeList> par_results(threads_count);
         std::vector<std::thread> threads;
         threads.reserve(threads_count);
+        std::set<fs::path> visited;
+        std::mutex visited_mtx;
+        isVisitedT checkVisited = [&](fs::path const&p)
+        {
+          std::unique_lock<std::mutex> lck(visited_mtx);
+          if (visited.find(p) != visited.end())
+            return true;
+          visited.insert(p);
+          return false;
+        };
 
         auto work_item = [&](size_t idx)
         {
@@ -191,7 +200,7 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
           {
             Include &i = temps[ii];
             if (is_in_dir(d, i.file))
-              i.guard = getAllRelativeIncludesRecursive(d, i.file, res, 1, visited);
+              i.guard = getAllRelativeIncludesRecursive(d, i.file, res, 1, checkVisited);
             else
             {
               auto hg = getHeaderGuard(i.file);

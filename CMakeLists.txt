@@ -11,5 +11,6 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 find_package(Threads REQUIRED)
 add_executable(prepare_cc ${SRC} ${HDR})
-target_link_libraries(prepare_cc PRIVATE Threads::Threads)
+target_compile_options(prepare_cc PUBLIC -fsanitize=address)
+target_link_libraries(prepare_cc PRIVATE Threads::Threads asan)
 set_property(TARGET prepare_cc PROPERTY CXX_STANDARD 17)
