@@ -16,6 +16,7 @@ IndexerPreparator::IndexerPreparator(CCOptions const &opts)
       inc_base(cl ? "/clang:--include" : "--include="),
       compile_target(cl ? "/bigobj" : "-c"),
       define_opt(cl ? "/D " : "-D"),
+      xheader_opt(cl ? "/clang:-xc++-header" : "-xc++-header"),
       PCHs(opts.PCHs) {}
 
 std::string IndexerPreparator::add_pch_include(std::string cmd, fs::path pch) const
@@ -38,11 +39,8 @@ std::string IndexerPreparator::add_pch_include(std::string cmd, fs::path pch) co
 
 void IndexerPreparator::add_header_type(std::string &cmd) const
 {
-    if (cl)
-      cmd += " /clang:";
-    else
-      cmd += " ";
-    cmd += "-xc++-header";
+    cmd += ' ';
+    cmd += xheader_opt;
 } 
 
 void IndexerPreparator::add_target(std::string &cmd, std::string const& tgt) const
@@ -84,15 +82,9 @@ void IndexerPreparator::QuickPrepare(nlohmann::json &obj, fs::path target, json_
 
 void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
                                 json_list &to_add) {
-  this->target = to_real_path(std::move(target), true);
+  this->target = std::move(target);//to_real_path(std::move(target), true);
   this->pObj = &obj;
   this->pToAdd = &to_add;
-
-  if (cl)
-  {
-    std::string _cmd = (*pObj)["command"];
-    hasTPInCommand = _cmd.find("/TP") != std::string::npos;
-  }
 
   do_start();
 
@@ -182,7 +174,7 @@ void IndexerPreparator::do_check_pch()
   inc_pch.clear();
   inc_pch_base.clear();
   fs::path stdafx = pHeaderBlocks->target;
-  auto i = std::find_if(PCHs.begin(), PCHs.end(), [&](CCOptions::PCH &p){return p.file == stdafx;}); 
+  auto i = std::find_if(PCHs.begin(), PCHs.end(), [&](CCOptions::PCH &p){return fs::equivalent(p.file, stdafx);}); 
   if (i == PCHs.end())
   {
     auto i = std::find_if(PCHs.begin(), PCHs.end(), [&](const CCOptions::PCH &p){
@@ -228,12 +220,14 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   do_process_header_set_file(h.header.string());
   do_process_header_remove_args(compile_target);
 
-  if (cl/* && !hasTPInCommand*/)
-    do_process_header_add_args("/TP");
+  do_process_header_add_args(std::string(xheader_opt));
 
   if (!inc_pch.empty())
   {
-    do_process_header_remove_args(inc_base);
+      //for header need to remove PCH from base command
+	  std::string main_inc_pch(inc_base);
+	  main_inc_pch += inc_pch.string();
+      do_process_header_remove_args(main_inc_pch, 0);
     if (!inc_pch_base.empty())
     {
       std::string pch_base(inc_base);
@@ -301,9 +295,14 @@ void IndexerPreparatorWithDependencies::do_process_header_set_file(
   h_dep["file"] = f;
 }
 void IndexerPreparatorWithDependencies::do_process_header_remove_args(
-    std::string_view what) {
+    std::string_view what, int count) {
   // dummy
-  std::string t("1:");
+    std::string t;
+    if (count)
+    {
+        t += std::to_string(count);
+        t += ':';
+    }
   t += what;
   rem_c.push_back(t);
 }
@@ -394,7 +393,7 @@ void IndexerPreparatorCanonical::do_process_header_set_file(std::string f)
     entry["file"] = f;
 }
 
-void IndexerPreparatorCanonical::do_process_header_remove_args(std::string_view what)
+void IndexerPreparatorCanonical::do_process_header_remove_args(std::string_view what, int count)
 {
     if (what != compile_target)
         remove_search_and_next(entry_cmd, what);

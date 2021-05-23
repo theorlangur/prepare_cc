@@ -33,7 +33,7 @@ class IndexerPreparator
 
     virtual void do_process_header_begin() = 0;
     virtual void do_process_header_set_file(std::string f) = 0;
-    virtual void do_process_header_remove_args(std::string_view what) = 0;
+    virtual void do_process_header_remove_args(std::string_view what, int count = 1) = 0;
     virtual void do_process_header_add_args(std::string what) = 0;
     virtual void do_process_header_end() = 0;
 
@@ -65,7 +65,7 @@ class IndexerPreparator
     std::string_view inc_base;
     std::string_view compile_target;
     std::string_view define_opt;
-    bool hasTPInCommand;
+    std::string_view xheader_opt;
     decltype(CCOptions::PCHs) PCHs;
 };
 
@@ -79,7 +79,7 @@ class IndexerPreparatorWithDependencies: public IndexerPreparator
     virtual void do_closest_cpp_include(Include &inc) override;
     virtual void do_process_header_begin() override;
     virtual void do_process_header_set_file(std::string f) override;
-    virtual void do_process_header_remove_args(std::string_view what) override;
+    virtual void do_process_header_remove_args(std::string_view what, int count = 1) override;
     virtual void do_process_header_add_args(std::string what) override;
     virtual void do_process_header_end() override;
     virtual void do_header_blocks_end() override;
@@ -101,7 +101,7 @@ class IndexerPreparatorCanonical: public IndexerPreparator
     virtual void do_closest_cpp_include(Include &inc) override;
     virtual void do_process_header_begin() override;
     virtual void do_process_header_set_file(std::string f) override;
-    virtual void do_process_header_remove_args(std::string_view what) override;
+    virtual void do_process_header_remove_args(std::string_view what, int count = 1) override;
     virtual void do_process_header_add_args(std::string what) override;
     virtual void do_process_header_end() override;
     virtual void do_header_blocks_end() override;

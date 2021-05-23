@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
             base = argv[i];
             if (base.is_relative())
                 base = fs::current_path() / base;
-            base = to_real_path(base, true);
+            base = to_real_path(base, false);
             if (!fs::exists(base))
                 throw std::runtime_error("Base directory doesn't exist");
         }
