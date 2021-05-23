@@ -84,7 +84,7 @@ void IndexerPreparator::QuickPrepare(nlohmann::json &obj, fs::path target, json_
 
 void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
                                 json_list &to_add) {
-  this->target = std::move(target);
+  this->target = to_real_path(std::move(target), true);
   this->pObj = &obj;
   this->pToAdd = &to_add;
 
@@ -171,7 +171,7 @@ void IndexerPreparator::add_single_pch(pch_it i)
 
   nlohmann::json pch_cmd;
   pch_cmd["directory"] = (*pObj)["directory"];
-  pch_cmd["file"] = i->file;
+  pch_cmd["file"] = i->file.string();
   pch_cmd["command"] = cmd;
 
   pToAdd->emplace_back(std::move(pch_cmd));
@@ -196,14 +196,14 @@ void IndexerPreparator::do_check_pch()
 
       fs::path dir = inc_pch;
       dir.remove_filename();
-      pchForPath[dir] = std::distance(PCHs.begin(), i);
+      pchForPath[dir] = (int)std::distance(PCHs.begin(), i);
     }
     return;
   }
 
   fs::path dir = target;
   dir.remove_filename();
-  pchForPath[dir] = std::distance(PCHs.begin(), i);
+  pchForPath[dir] = (int)std::distance(PCHs.begin(), i);
 
   inc_pch = stdafx;
   inc_pch_base = i->dep;

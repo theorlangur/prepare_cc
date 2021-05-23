@@ -78,5 +78,6 @@ bool processCompileCommandsTo(CCOptions const& options);
 
 bool is_in_dir(fs::path const& parent, fs::path const& child);
 bool is_in_dir(fs::path const& parent, fs::path const& child, fs::path::iterator &childIt);
+fs::path to_real_path(fs::path p, bool upper);
 
 #endif

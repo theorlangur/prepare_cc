@@ -7,48 +7,6 @@
 #include "compile_commands_processor.h"
 #include "log.h"
 
-std::string to_lower(std::string s)
-{
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {return tolower(c); });
-    return s;
-}
-
-std::string to_upper(std::string s)
-{
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {return toupper(c); });
-    return s;
-}
-
-std::string find_real_name(fs::path p, std::string search)
-{
-    std::error_code err;
-    fs::path cmp_against = p / search;
-    for (auto& x : fs::directory_iterator(p))
-    {
-        fs::path xp = p / x;
-        if (fs::equivalent(xp, cmp_against, err))
-            return x.path().filename().string();
-    }
-    return search;
-}
-
-fs::path to_real_path(fs::path p, bool upper)
-{
-    if (!p.is_absolute())
-        return p;
-
-    auto i = p.begin();
-    fs::path res(upper ? to_upper(i->string()) : to_lower(i->string()));
-    ++i;
-    res /= *i;
-    for (++i; i != p.end(); ++i)
-    {
-        res /= find_real_name(res, i->string());
-    }
-    res = res.lexically_normal();
-    return res;
-}
-
 int main(int argc, char *argv[])
 {
     CCOptions opts;
