@@ -21,7 +21,7 @@ IndexerPreparator::IndexerPreparator(CCOptions const &opts)
 std::string IndexerPreparator::add_pch_include(std::string cmd, fs::path pch) const
 {
     std::string inc_stdafx{inc_base};
-    inc_stdafx += pch;
+    inc_stdafx += pch.string();
     size_t pos = cmd.find("include");
     if (pos == std::string::npos)
       pos = cmd.find(' ');
@@ -237,7 +237,7 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
     if (!inc_pch_base.empty())
     {
       std::string pch_base(inc_base);
-      pch_base += inc_pch_base;
+      pch_base += inc_pch_base.string();
       do_process_header_add_args(pch_base);//--include=<path-to-pch>
     }
   }
