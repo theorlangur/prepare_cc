@@ -279,8 +279,6 @@ void IndexerPreparatorWithDependencies::do_closest_cpp_include(
     Include &inc) {
   nlohmann::json cpp_dep;
   cpp_dep["file"] = inc.file.string();
-  if (inc_pch != inc_stdafx)
-    cpp_dep["add"].push_back(inc_stdafx);
   lDbg() << "Cpp dependency: " << cpp_dep["file"] << "\n";
   deps.push_back(cpp_dep);
 }
