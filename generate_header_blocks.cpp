@@ -38,6 +38,8 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
       std::ofstream _before(res.include_before);
       std::ofstream _after(res.include_after);
 
+      std::string_view define_self("_CLANGD_CODE_COMPLETE_");//INCLUDE_AFTER_WITHOUT_TARGET
+
       auto addHeader = [&](IncludeConstIter i, std::string_view directive)
       {
           HeaderBlocks::Header h;
@@ -59,14 +61,14 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
               _xbefore.open(h.include_before, std::ios::out);
               _xafter.open(h.include_after, std::ios::out);
 
-			  _xbefore << "#ifndef INCLUDE_AFTER_WITHOUT_TARGET\n";
+			  _xbefore << "#ifndef "<< define_self <<"\n";
 			  _xbefore << "#define " << i->guard << "\n";
 			  _xbefore << "#endif\n";
           }else 
           { 
 			  h.define = i->guard + "_INCLUDE";
 			  _before << '#' << directive << " defined(" << h.define << ")\n";
-			  _before << "#ifndef INCLUDE_AFTER_WITHOUT_TARGET\n";
+			  _before << "#ifndef "<<define_self<<"\n";
 			  _before << "#define " << i->guard << "\n";
 			  _before << "#endif\n";
           }
@@ -86,7 +88,7 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
 
           if (!separate_includes)
           {
-			  _after << '#' << directive << " defined(" << h.define << ") && !defined(INCLUDE_AFTER_WITHOUT_TARGET)\n";
+			  _after << '#' << directive << " defined(" << h.define << ") && !defined("<<define_self<<")\n";
 			  _after << "#undef " << i->guard << "\n";
           }
           else

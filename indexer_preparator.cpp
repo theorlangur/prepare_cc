@@ -16,7 +16,8 @@ IndexerPreparator::IndexerPreparator(CCOptions const &opts)
       inc_base(cl ? "/clang:--include" : "--include="),
       compile_target(cl ? "/bigobj" : "-c"),
       define_opt(cl ? "/D " : "-D"),
-      xheader_opt(cl ? "/clang:-xc++-header" : "-xc++-header"),
+      //xheader_opt(cl ? "/clang:-xc++-header" : "-xc++-header"),
+      xheader_opt("-xc++-header"),
       PCHs(opts.PCHs) {}
 
 std::string IndexerPreparator::add_pch_include(std::string cmd, fs::path pch) const
@@ -157,7 +158,7 @@ void IndexerPreparator::add_single_pch(pch_it i)
     if (!i->dep.empty())
       cmd = add_pch_include(cmd, i->dep);
 
-    add_header_type(cmd);
+	add_header_type(cmd);
     add_target(cmd, i->file.string());
   }
 
@@ -220,7 +221,8 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   do_process_header_set_file(h.header.string());
   do_process_header_remove_args(compile_target);
 
-  do_process_header_add_args(std::string(xheader_opt));
+  if (!cl)
+	  do_process_header_add_args(std::string(xheader_opt));
 
   if (!inc_pch.empty())
   {
@@ -404,7 +406,8 @@ void IndexerPreparatorCanonical::do_process_header_add_args(std::string what)
 }
 void IndexerPreparatorCanonical::do_process_header_end()
 {
-    add_header_type(entry_cmd);
+    if (!cl)
+		add_header_type(entry_cmd);
     add_target(entry_cmd, file);
 
     entry["command"] = entry_cmd;
