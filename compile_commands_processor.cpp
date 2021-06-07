@@ -333,6 +333,7 @@ const std::map<std::string, CCOptions::Reader> CCOptions::g_OptionReaders({
   {"include-dir", &CCOptions::read_tpl<&CCOptions::include_dir>},
   {"include-per-file", &CCOptions::read_tpl<&CCOptions::include_per_file>},
   {"no-dependencies", &CCOptions::read_tpl<&CCOptions::no_dependencies>},
+  {"dynamic-pch", &CCOptions::read_tpl<&CCOptions::dynamic_pch>},
   {"filter-in", &CCOptions::read_tpl<&CCOptions::filter_in>},
   {"filter-out", &CCOptions::read_tpl<&CCOptions::filter_out>},
   {"cmd-modifiers", &CCOptions::read_replace_list},

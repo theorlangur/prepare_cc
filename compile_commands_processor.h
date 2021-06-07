@@ -35,6 +35,7 @@ struct CCOptions
   std::string include_dir;
   bool include_per_file = false;
   bool no_dependencies = false;
+  bool dynamic_pch = false;
   std::vector<PCH> PCHs;
 
   bool is_filtered_in(fs::path const& f) const;

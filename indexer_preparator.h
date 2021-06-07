@@ -36,6 +36,7 @@ class IndexerPreparator
     virtual void do_process_header_remove_args(std::string_view what, int count = 1) = 0;
     virtual void do_process_header_add_args(std::string what) = 0;
     virtual void do_process_header_end() = 0;
+    virtual void do_process_header_add_dynamic_pch(std::string dynpch) {};
 
     virtual void do_header_blocks_end() = 0;
 
@@ -49,6 +50,7 @@ class IndexerPreparator
     std::string inc_stdafx;
     std::string inc_before;
     std::string inc_after;
+    std::string inc_after_file;
     fs::path dir_stdafx;
     HeaderBlocks::Header *pHeader;//current header
     fs::path inc_pch;
@@ -81,6 +83,7 @@ class IndexerPreparatorWithDependencies: public IndexerPreparator
     virtual void do_process_header_set_file(std::string f) override;
     virtual void do_process_header_remove_args(std::string_view what, int count = 1) override;
     virtual void do_process_header_add_args(std::string what) override;
+    virtual void do_process_header_add_dynamic_pch(std::string dynpch) override;
     virtual void do_process_header_end() override;
     virtual void do_header_blocks_end() override;
 
