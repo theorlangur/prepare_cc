@@ -84,13 +84,6 @@ bool processCompileCommandsTo(CCOptions const& options)
             lInfo() << "Filtered out: " << file << "\n";
             return false;
          }
-
-         if (!options.is_filtered_in(file))
-         {
-            to_add.emplace_back(std::move(entry));
-            lInfo() << "Not filtered in, adding as-is:" << file << "\n";
-            return true;
-         }
         
         if (!options.command_modifiers.empty() && entry["command"].is_string())
         {
@@ -104,6 +97,13 @@ bool processCompileCommandsTo(CCOptions const& options)
                    << "after: " << after << "\n";
           }
         }
+
+         if (!options.is_filtered_in(file))
+         {
+            to_add.emplace_back(std::move(entry));
+            lInfo() << "Not filtered in, adding as-is:" << file << "\n";
+            return true;
+         }
 
         fs::path d = file;
         d.remove_filename();
