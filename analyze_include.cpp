@@ -298,6 +298,7 @@ std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& cl
     if(m_File.getline(m_Buffer, sizeof(m_Buffer)))
     {
         const char *pLine = m_Buffer;
+        bool wasFirst = m_First;
         if (m_First)
         {
           m_First = false;
@@ -325,7 +326,7 @@ std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& cl
             m_Include = Include(m_Line, std::move(_g), std::move(inc_path));
             res = true;
         }
-        if (!m_HeaderGuardOnIteration && m_TargetGuard.empty())
+        if (!m_HeaderGuardOnIteration && m_TargetGuard.empty() && wasFirst)
         {
           auto guard = matchIfndefDirective(sv);
           if (guard.has_value())
