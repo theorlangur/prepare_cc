@@ -130,7 +130,7 @@ std::optional<std::string> getHeaderGuard(fs::path h)
 
 using isVisitedT = std::function<bool(fs::path const&)>;
 //returns guard for the target if exists
-std::string getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, isVisitedT &visited)
+std::optional<std::string> getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, isVisitedT &visited)
 {
     if (visited(target))
     {
@@ -139,22 +139,27 @@ std::string getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path c
     }
     IncludeIterator ii(target, false);
     for (Include i : ii) {
+      std::optional<std::string> g;
       if (is_in_dir(boundary, i.file))
-        i.guard = getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1, visited);
+        g = getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1, visited);
       else
       {
-        auto hg = getHeaderGuard(i.file);
-        if (hg.has_value())
-          i.guard = *hg;
+        g = getHeaderGuard(i.file);
+	    if (!g.has_value())
+			g = std::string();
       }
 
-      if (!i.guard.empty())
+      if (g.has_value())
       {
-        i.level = l;
-        includes.emplace_back(i);
+		  i.guard = *g;
+		  if (!i.guard.empty())
+		  {
+			i.level = l;
+			includes.emplace_back(i);
+		  }
+		  else
+			lWarn() << "inc (no guard): " << i.file << "\n";
       }
-      else
-        lWarn() << "inc (no guard): " << i.file << "\n";
     }
 
     return ii.getTargetGuard();
@@ -199,22 +204,27 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
           for(size_t ii = from; ii < to; ++ii)
           {
             Include &i = temps[ii];
+            std::optional<std::string> g;
             if (is_in_dir(d, i.file))
-              i.guard = getAllRelativeIncludesRecursive(d, i.file, res, 1, checkVisited);
+              g = getAllRelativeIncludesRecursive(d, i.file, res, 1, checkVisited);
             else
             {
-              auto hg = getHeaderGuard(i.file);
-              if (hg.has_value())
-                i.guard = *hg;
+              g = getHeaderGuard(i.file);
+              if (!g.has_value())
+                g = std::string();
             }
 
-            if (!i.guard.empty())
+            if (g.has_value())
             {
-              i.level = 0;
-              res.emplace_back(i);
+                i.guard = *g;
+				if (!i.guard.empty())
+				{
+				  i.level = 0;
+				  res.emplace_back(i);
+				}
+				else
+				  lWarn() << "inc (no guard): " << i.file << "\n";
             }
-            else
-              lWarn() << "inc (no guard): " << i.file << "\n";
           }
         };
         for(size_t i = 0; i < threads_count; ++i)
@@ -286,6 +296,7 @@ std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& cl
 }
 
   IncludeIterator::IncludeIterator(fs::path t, bool headerGuardOnIteration/* = true*/):
+    m_Target(t),
     m_TargetDir(t),
     m_File(t, std::ios_base::in),
     m_HeaderGuardOnIteration(headerGuardOnIteration)
@@ -304,6 +315,36 @@ std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& cl
           m_First = false;
           if ((uint8_t)pLine[0] == 0xef && (uint8_t)pLine[1] == 0xbb && (uint8_t)pLine[2] == 0xbf)
             pLine += 3;
+
+          bool multilineComment = false;
+          while(true)
+          {
+			  std::string_view sv(pLine);
+			  auto not_space = nonSpaceFinder(sv);
+			  auto first = not_space(sv.begin());
+              if (first != sv.end())
+              {
+                  if (multilineComment)
+                  {
+                      if (sv.find("*/") != std::string::npos)
+                          multilineComment = false;
+                  }
+                  else if (*first == '/' && *(first + 1) == '*')
+                  {
+                      multilineComment = true;
+                      if (sv.find("*/") != std::string::npos)
+                          break;
+                  }
+                  else if (*first != '/' || *(first + 1) != '/')
+					  break;
+              }
+              if (!m_File.getline(m_Buffer, sizeof(m_Buffer)))
+              {
+                  m_Finished = true;
+                  return false;
+              }
+              pLine = m_Buffer;
+          }
         }
 
         bool res = false;
