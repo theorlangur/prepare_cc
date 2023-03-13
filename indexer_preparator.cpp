@@ -90,7 +90,7 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
   do_start();
 
   auto headerBlocks = generateHeaderBlocksForBlockFile(
-      this->target, opts.include_dir, opts.include_per_file);
+      this->target, opts.include_dir);
   if (headerBlocks.has_value() && !headerBlocks->headers.empty()) {
     pHeaderBlocks = &*headerBlocks;
 
@@ -101,13 +101,6 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
 
     inc_stdafx = inc_base;
     inc_stdafx += headerBlocks->target.string();
-
-    inc_before = inc_base;
-    inc_before += headerBlocks->include_before.string();
-
-    inc_after = inc_base;
-    inc_after += headerBlocks->include_after.string();
-    inc_after_file = headerBlocks->include_after.string();
 
     dir_stdafx = headerBlocks->target;
     dir_stdafx.remove_filename();
@@ -245,27 +238,13 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
     do_process_header_add_args(def);
   }
 
-  if (!h.include_before.empty()) {
-    std::string inc_b(inc_base);
-    inc_b += h.include_before.string();
-    do_process_header_add_args(inc_b);
-  } else
-    do_process_header_add_args(inc_before);
-
   do_process_header_add_args(inc_stdafx);
 
   std::string inc_a;
-  std::string inc_a_file;
-  if (!h.include_after.empty()) {
-    inc_a = inc_base;
-    inc_a += h.include_after.string();
-    inc_a_file = h.include_after.string();
-  }
-  else
-  {
-    inc_a = inc_after;
-    inc_a_file = inc_after_file;
-  }
+  std::string inc_a_file = h.header.string();
+  inc_a_file += ".ghost";
+  inc_a = inc_base;
+  inc_a += inc_a_file;
 
   if (opts.dynamic_pch)
   {
@@ -334,6 +313,10 @@ void IndexerPreparatorWithDependencies::do_process_header_add_dynamic_pch(std::s
   dyn_pch = h_dep;
   dyn_pch["file"] = dynpch;
   dyn_pch["add"] = add_args;
+  std::string def(define_opt);
+  def += "__CLANGD_PCH_SKIP__=";
+  def += pHeader->header.string();
+  dyn_pch["add"].push_back(def);
   dyn_pch["remove"] = rem_c;
   deps.push_back(dyn_pch);
 }

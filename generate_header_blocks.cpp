@@ -6,7 +6,7 @@
 #include <fstream>
 #include <string_view>
 
-std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo, bool separate_includes)
+std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo)
 {
   if (!fs::exists(header) || !fs::exists(saveTo))
   {
@@ -22,91 +22,17 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
   {
       HeaderBlocks res;
       res.target = header;
-      res.dummy_cpp = saveTo;
-      res.dummy_cpp /= "dummy.cpp";
-      if (!separate_includes)
-      {
-		  res.include_before = saveTo;
-		  res.include_after = saveTo;
-		  res.include_before /= "include_before.h";
-		  res.include_after /= "include_after.h";
-      }
 
-      std::ofstream _dummy(res.dummy_cpp);
-      _dummy << "namespace {};\n";
-
-      std::ofstream _before(res.include_before);
-      std::ofstream _after(res.include_after);
-
-      std::string_view define_self("_CLANGD_CODE_COMPLETE_");//INCLUDE_AFTER_WITHOUT_TARGET
-
-      auto addHeader = [&](IncludeConstIter i, std::string_view directive)
+      auto addHeader = [&](IncludeConstIter i)
       {
           HeaderBlocks::Header h;
           h.header = i->file;
-
-		  std::ofstream _xbefore;
-		  std::ofstream _xafter;
-
-          if (separate_includes)
-          {
-              h.include_before = saveTo;
-              h.include_after = saveTo;
-
-              h.include_before /= i->file.filename();
-              h.include_after /= i->file.filename();
-              h.include_before += ".before.inc";
-              h.include_after += ".after.inc";
-
-              _xbefore.open(h.include_before, std::ios::out);
-              _xafter.open(h.include_after, std::ios::out);
-
-			  _xbefore << "#ifndef "<< define_self <<"\n";
-			  _xbefore << "#define " << i->guard << "\n";
-			  _xbefore << "#endif\n";
-          }else 
-          { 
-			  h.define = i->guard + "_INCLUDE";
-			  _before << '#' << directive << " defined(" << h.define << ")\n";
-			  _before << "#ifndef "<<define_self<<"\n";
-			  _before << "#define " << i->guard << "\n";
-			  _before << "#endif\n";
-          }
-          int lev = i->level;
-          for (auto j = i + 1; j != includes.end(); ++j)
-          {
-              if (j->level < lev)
-              {
-                  lev = j->level;
-                  continue;//when popping up we don't block outer header files
-              }
-              if (!separate_includes)
-				  _before << "#define " << j->guard << "\n";
-              else
-				  _xbefore << "#define " << j->guard << "\n";
-          }
-
-          if (!separate_includes)
-          {
-			  _after << '#' << directive << " defined(" << h.define << ") && !defined("<<define_self<<")\n";
-			  _after << "#undef " << i->guard << "\n";
-          }
-          else
-          {
-			  _xafter << "#undef " << i->guard << "\n";
-          }
-
+          //h.define = i->guard;
           res.headers.push_back(std::move(h));
       };
 
-      addHeader(includes.begin(), "if");
-      for(IncludeConstIter i = includes.begin() + 1; i != includes.end(); ++i)
-      {
-          addHeader(i, "elif");
-      }
-
-      _before << "#endif";
-      _after << "#endif";
+      for(IncludeConstIter i = includes.begin(); i != includes.end(); ++i)
+          addHeader(i);
 
       return std::move(res);
   }else
@@ -117,7 +43,7 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
   return {};
 }
 
-std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir, bool separate_includes)
+std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir)
 {
   if (!fs::exists(block_cpp))
   {
@@ -146,7 +72,7 @@ std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp,
 
   auto inc = getNthRelativeInclude(block_cpp);
   if (inc.has_value())
-      return generateHeaderBlocks(inc->file, dir, separate_includes);
+      return generateHeaderBlocks(inc->file, dir);
   else
       lDbg() << "No first include to generate block files from: " << block_cpp << "\n";
 

@@ -331,7 +331,6 @@ const std::map<std::string, CCOptions::Reader> CCOptions::g_OptionReaders({
   {"to", &CCOptions::read_tpl<&CCOptions::save_to>},
   {"clang-cl", &CCOptions::read_tpl<&CCOptions::clang_cl>},
   {"include-dir", &CCOptions::read_tpl<&CCOptions::include_dir>},
-  {"include-per-file", &CCOptions::read_tpl<&CCOptions::include_per_file>},
   {"no-dependencies", &CCOptions::read_tpl<&CCOptions::no_dependencies>},
   {"dynamic-pch", &CCOptions::read_tpl<&CCOptions::dynamic_pch>},
   {"filter-in", &CCOptions::read_tpl<&CCOptions::filter_in>},

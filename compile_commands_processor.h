@@ -33,7 +33,6 @@ struct CCOptions
   std::vector<std::regex> skip_dep;
   bool clang_cl = false;
   std::string include_dir;
-  bool include_per_file = false;
   bool no_dependencies = false;
   bool dynamic_pch = false;
   std::vector<PCH> PCHs;
