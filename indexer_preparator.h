@@ -36,12 +36,15 @@ class IndexerPreparator
     virtual void do_process_header_remove_args(std::string_view what, int count = 1) = 0;
     virtual void do_process_header_add_args(std::string what) = 0;
     virtual void do_process_header_end() = 0;
-    virtual void do_process_header_add_dynamic_pch(std::string dynpch, const std::string &inc_stdafx, bool skipAsPchDependency) {};
+    virtual void do_process_header_add_dynamic_pch(std::string dynpch, const std::string &inc_stdafx) {};
 
     virtual void do_header_blocks_end() = 0;
 
     void add_define(std::string def);
     void add_include(std::string inc);
+
+    std::string to_define(std::string def);
+    std::string to_include(std::string inc);
 
     void process_header(HeaderBlocks::Header &h);
 
@@ -86,7 +89,7 @@ class IndexerPreparatorWithDependencies: public IndexerPreparator
     virtual void do_process_header_set_file(std::string f) override;
     virtual void do_process_header_remove_args(std::string_view what, int count = 1) override;
     virtual void do_process_header_add_args(std::string what) override;
-    virtual void do_process_header_add_dynamic_pch(std::string dynpch, const std::string &inc_stdafx, bool skipAsPchDependency) override;
+    virtual void do_process_header_add_dynamic_pch(std::string dynpch, const std::string &inc_stdafx) override;
     virtual void do_process_header_end() override;
     virtual void do_header_blocks_end() override;
 

@@ -211,14 +211,22 @@ void IndexerPreparator::do_check_pch()
 
 void IndexerPreparator::add_define(std::string def)
 {
-    def.insert(0, define_opt);
-    do_process_header_add_args(def);
+    do_process_header_add_args(to_define(def));
 }
 
 void IndexerPreparator::add_include(std::string inc)
 {
-  inc.insert(0, inc_base);
-  do_process_header_add_args(inc);//--include=<path-to-pch>
+  do_process_header_add_args(to_include(inc));//--include=<path-to-pch>
+}
+
+std::string IndexerPreparator::to_define(std::string def)
+{
+    return std::move(def.insert(0, define_opt));
+}
+
+std::string IndexerPreparator::to_include(std::string inc)
+{
+    return std::move(inc.insert(0, inc_base));
 }
 
 void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
@@ -236,8 +244,6 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
 	  std::string main_inc_pch(inc_base);
 	  main_inc_pch += inc_pch.string();
       do_process_header_remove_args(main_inc_pch, 0);
-    if (!inc_pch_base.empty())
-        add_include(inc_pch_base.string());
   }
 
   if (!h.define.empty())
@@ -252,14 +258,16 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
 	  inc_a = inc_base;
 	  inc_a += inc_a_file;
 
-	  do_process_header_add_dynamic_pch(inc_a_file, inc_stdafx, inc_pch_base.empty());
+	  do_process_header_add_dynamic_pch(inc_a_file, inc_stdafx);
 
-	  do_process_header_add_args(inc_stdafx);
+	  //do_process_header_add_args(inc_stdafx);
 	  add_define("__CLANGD_DYNAMIC_PCH__");
 	  do_process_header_add_args(inc_a);
   }
   else
   {
+	  if (!inc_pch_base.empty())
+		  add_include(inc_pch_base.string());
 	  add_define("__CLANGD_SKIP_SELF_INCLUDE__");
 	  if (inc_pch_base.empty())
 		  add_define("__CLANGD_NO_PCH_DEP_NEXT__");
@@ -317,18 +325,20 @@ void IndexerPreparatorWithDependencies::do_process_header_add_args(
   add_args.push_back(what);
 }
 
-void IndexerPreparatorWithDependencies::do_process_header_add_dynamic_pch(std::string dynpch, const std::string &inc_stdafx, bool skipAsPchDependency)
+void IndexerPreparatorWithDependencies::do_process_header_add_dynamic_pch(std::string dynpch, const std::string &inc_stdafx)
 {
   nlohmann::json dyn_pch;
   dyn_pch = h_dep;
   dyn_pch["file"] = dynpch;
   dyn_pch["add"] = add_args;
-  if (skipAsPchDependency)
+  if (inc_pch_base.empty())
   {
 	  std::string def(define_opt);
 	  def += "__CLANGD_NO_PCH_DEP_NEXT__";
 	  dyn_pch["add"].push_back(def);
   }
+  else
+	  dyn_pch["add"].push_back(to_include(inc_pch_base.string()));
   dyn_pch["add"].push_back(inc_stdafx);
   std::string def(define_opt);
   def += "__CLANGD_PCH_SKIP__=";
