@@ -40,6 +40,9 @@ class IndexerPreparator
 
     virtual void do_header_blocks_end() = 0;
 
+    void add_define(std::string def);
+    void add_include(std::string inc);
+
     void process_header(HeaderBlocks::Header &h);
 
     //call args

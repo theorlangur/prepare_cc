@@ -209,6 +209,18 @@ void IndexerPreparator::do_check_pch()
   }
 }
 
+void IndexerPreparator::add_define(std::string def)
+{
+    def.insert(0, define_opt);
+    do_process_header_add_args(def);
+}
+
+void IndexerPreparator::add_include(std::string inc)
+{
+  inc.insert(0, inc_base);
+  do_process_header_add_args(inc);//--include=<path-to-pch>
+}
+
 void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
   pHeader = &h;
   do_process_header_begin();
@@ -225,41 +237,35 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
 	  main_inc_pch += inc_pch.string();
       do_process_header_remove_args(main_inc_pch, 0);
     if (!inc_pch_base.empty())
-    {
-      std::string pch_base(inc_base);
-      pch_base += inc_pch_base.string();
-      do_process_header_add_args(pch_base);//--include=<path-to-pch>
-    }
+        add_include(inc_pch_base.string());
   }
 
-  if (!h.define.empty()) {
-    std::string def(define_opt);
-    def += h.define;
-    do_process_header_add_args(def);
-  }
+  if (!h.define.empty())
+      add_define(h.define);
 
-
-  std::string inc_a;
-  std::string inc_a_file = h.header.string();
-  inc_a_file += ".ghost";
-  inc_a = inc_base;
-  inc_a += inc_a_file;
 
   if (opts.dynamic_pch)
   {
-    do_process_header_add_dynamic_pch(inc_a_file, inc_stdafx, inc_pch_base.empty());
+	  std::string inc_a;
+	  std::string inc_a_file = h.header.string();
+	  inc_a_file += ".ghost";
+	  inc_a = inc_base;
+	  inc_a += inc_a_file;
 
-    do_process_header_add_args(inc_stdafx);
-    std::string def(define_opt);
-    def += "__CLANGD_DYNAMIC_PCH__";
-    do_process_header_add_args(def);
+	  do_process_header_add_dynamic_pch(inc_a_file, inc_stdafx, inc_pch_base.empty());
+
+	  do_process_header_add_args(inc_stdafx);
+	  add_define("__CLANGD_DYNAMIC_PCH__");
+	  do_process_header_add_args(inc_a);
   }
   else
   {
+	  add_define("__CLANGD_SKIP_SELF_INCLUDE__");
+	  if (inc_pch_base.empty())
+		  add_define("__CLANGD_NO_PCH_DEP_NEXT__");
 	  do_process_header_add_args(inc_stdafx);
   }
 
-  do_process_header_add_args(inc_a);
   do_process_header_end();
 }
 
