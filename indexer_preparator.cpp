@@ -372,7 +372,8 @@ void remove_search_and_next(std::string &where, std::string_view const & what)
                 //found it
                 break;
             }
-        }
+        }else
+          from = res + 1;
     }
 
     size_t to = where.size();
