@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "compile_commands_processor.h"
 
 namespace fs = std::filesystem;
 
@@ -20,6 +21,6 @@ struct HeaderBlocks
 };
 
 std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo);
-std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir);
+std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir, CCOptions const& opts);
 
 #endif

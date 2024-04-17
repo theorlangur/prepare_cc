@@ -6,6 +6,7 @@
 #include <string>
 #include <filesystem>
 #include <optional>
+#include "compile_commands_processor.h"
 
 namespace fs = std::filesystem;
 
@@ -29,7 +30,7 @@ struct IncludeConstSpan
 };
 
 std::optional<std::string> getHeaderGuard(fs::path h);
-IncludeList getAllRelativeIncludes(fs::path h, bool recursive);
+IncludeList getAllRelativeIncludes(fs::path h, bool recursive, CCOptions const& opts);
 std::optional<Include> getNthRelativeInclude(fs::path h, int n = 1);
 std::optional<Include> findClosestRelativeInclude(fs::path h, fs::path const& close_to, int skip = 0);
 

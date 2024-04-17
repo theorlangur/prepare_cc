@@ -203,6 +203,11 @@ void CCOptions::read_pch_config(std::string key, nlohmann::json &obj, const fs::
           nlohmann::json apply_for = fout["apply-for"];
           read_path_list("apply-for", apply_for, base, pch.apply_for);
         }
+        if (fout.contains("allow-includes-from"))
+        {
+            nlohmann::json allow_includes = fout["allow-includes-from"];
+            read_path_list("allow-includes-from", allow_includes, base, pch.allow_includes_from);
+        }
 
         if (!fs::exists(pch.file))
         {

@@ -127,10 +127,17 @@ std::optional<std::string> getHeaderGuard(fs::path h)
     return res;
 }
 
+bool is_in_any_dir(std::vector<fs::path> const& boundary, fs::path const& target)
+{
+    for (auto const& p : boundary)
+        if (is_in_dir(p, target))
+            return true;
+    return false;
+}
 
 using isVisitedT = std::function<bool(fs::path const&)>;
 //returns guard for the target if exists
-std::optional<std::string> getAllRelativeIncludesRecursive(fs::path const& boundary, fs::path const &target, IncludeList &includes, int l, isVisitedT &visited)
+std::optional<std::string> getAllRelativeIncludesRecursive(std::vector<fs::path> const& boundary, fs::path const &target, IncludeList &includes, int l, isVisitedT &visited)
 {
     if (visited(target))
     {
@@ -140,7 +147,7 @@ std::optional<std::string> getAllRelativeIncludesRecursive(fs::path const& bound
     IncludeIterator ii(target, false);
     for (Include i : ii) {
       std::optional<std::string> g;
-      if (is_in_dir(boundary, i.file))
+      if (is_in_any_dir(boundary, i.file))
         g = getAllRelativeIncludesRecursive(boundary, i.file, includes, l + 1, visited);
       else
       {
@@ -165,10 +172,20 @@ std::optional<std::string> getAllRelativeIncludesRecursive(fs::path const& bound
     return ii.getTargetGuard();
 }
 
-IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
+IncludeList getAllRelativeIncludes(fs::path h, bool recursive, CCOptions const& opts)
 {
     fs::path d = h;
     d.remove_filename();
+    std::vector<fs::path> allowed_dirs;
+    allowed_dirs.push_back(d);
+    for (auto const& pch : opts.PCHs)
+    {
+        if (pch.file == h)
+        {
+            for (auto const& p : pch.allow_includes_from)
+                allowed_dirs.push_back(p);
+        }
+    }
     IncludeList res;
     if (recursive)
     {
@@ -205,8 +222,8 @@ IncludeList getAllRelativeIncludes(fs::path h, bool recursive)
           {
             Include &i = temps[ii];
             std::optional<std::string> g;
-            if (is_in_dir(d, i.file))
-              g = getAllRelativeIncludesRecursive(d, i.file, res, 1, checkVisited);
+            if (is_in_any_dir(allowed_dirs, i.file))
+              g = getAllRelativeIncludesRecursive(allowed_dirs, i.file, res, 1, checkVisited);
             else
             {
               g = getHeaderGuard(i.file);

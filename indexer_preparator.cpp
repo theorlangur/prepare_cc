@@ -90,7 +90,7 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
   do_start();
 
   auto headerBlocks = generateHeaderBlocksForBlockFile(
-      this->target, opts.include_dir);
+      this->target, opts.include_dir, opts);
   if (headerBlocks.has_value() && !headerBlocks->headers.empty()) {
     pHeaderBlocks = &*headerBlocks;
 
@@ -105,6 +105,18 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
     dir_stdafx = headerBlocks->target;
     dir_stdafx.remove_filename();
 
+    std::vector<fs::path> allowed_dirs;
+    allowed_dirs.push_back(dir_stdafx);
+    for (auto const& pch : opts.PCHs)
+    {
+        if (pch.file == headerBlocks->target)
+        {
+            for (auto const& p : pch.allow_includes_from)
+                allowed_dirs.push_back(p);
+        }
+    }
+
+
     auto inc = findClosestRelativeInclude(this->target, dir_stdafx, 1);
     if (inc.has_value() &&
         (inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) {
@@ -116,7 +128,7 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
     }
 
     for (auto &h : headerBlocks->headers) {
-      if (!is_in_dir(dir_stdafx, h.header)) {
+      if (!is_in_any_dir(allowed_dirs, h.header)) {
         lInfo() << "Ignoring header " << h.header << "\n"
                 << "as it's not in the dir: " << dir_stdafx << "\n";
         continue;

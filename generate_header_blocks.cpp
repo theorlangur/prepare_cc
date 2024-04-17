@@ -6,7 +6,7 @@
 #include <fstream>
 #include <string_view>
 
-std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo)
+std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveTo, CCOptions const& opts)
 {
   if (!fs::exists(header) || !fs::exists(saveTo))
   {
@@ -17,7 +17,7 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
     return {};
   }
 
-  IncludeList includes = getAllRelativeIncludes(header, true);
+  IncludeList includes = getAllRelativeIncludes(header, true, opts);
   if (!includes.empty())
   {
       HeaderBlocks res;
@@ -43,7 +43,7 @@ std::optional<HeaderBlocks> generateHeaderBlocks(fs::path header, fs::path saveT
   return {};
 }
 
-std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir)
+std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp, std::string target_subdir, CCOptions const& opts)
 {
   if (!fs::exists(block_cpp))
   {
@@ -72,7 +72,7 @@ std::optional<HeaderBlocks> generateHeaderBlocksForBlockFile(fs::path block_cpp,
 
   auto inc = getNthRelativeInclude(block_cpp);
   if (inc.has_value())
-      return generateHeaderBlocks(inc->file, dir);
+      return generateHeaderBlocks(inc->file, dir, opts);
   else
       lDbg() << "No first include to generate block files from: " << block_cpp << "\n";
 
