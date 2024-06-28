@@ -117,15 +117,20 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
     }
 
 
-    auto inc = findClosestRelativeInclude(this->target, dir_stdafx, 1);
-    if (inc.has_value() &&
-        (inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) {
-      do_closest_cpp_include(*inc);
-    } else {
-      lInfo() << "Didn't find any included cpp file (so no cpp dependency in "
-                 "json) for file: "
-              << target << "\n";
+    for (auto const& dir_stdafx : allowed_dirs)
+    {
+		//attempt finding closest relative includes for all allowed includes
+		auto inc = findClosestRelativeInclude(this->target, dir_stdafx, 1);
+		if (inc.has_value() &&
+			(inc->file.extension() == ".cpp" || inc->file.extension() == ".CPP")) {
+		  do_closest_cpp_include(*inc);
+		} else {
+		  lInfo() << "Didn't find any included cpp file (so no cpp dependency in "
+					 "json) for file: "
+				  << target << "\n";
+		}
     }
+
 
     for (auto &h : headerBlocks->headers) {
       if (!is_in_any_dir(allowed_dirs, h.header)) {
