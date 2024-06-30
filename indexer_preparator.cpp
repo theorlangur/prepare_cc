@@ -8,6 +8,16 @@
 
 void remove_search_and_next(std::string &where, std::string_view const & what);
 
+std::string escape_spaces(std::string s)
+{
+  size_t start_pos = 0;
+  while((start_pos = s.find(' ', start_pos)) != std::string::npos) {
+    s.replace(start_pos, 1, "\\ ");
+    start_pos += 2; // Handles case where 'to' is a substring of 'from'
+  }
+  return s;
+}
+
 /*************************************************************************/
 /*IndexerPreparator                                                      */
 /*************************************************************************/
@@ -24,6 +34,7 @@ std::string IndexerPreparator::add_pch_include(std::string cmd, fs::path pch) co
 {
     std::string inc_stdafx{inc_base};
     inc_stdafx += pch.string();
+    inc_stdafx = escape_spaces(std::move(inc_stdafx));
     size_t pos = cmd.find("include");
     if (pos == std::string::npos)
       pos = cmd.find(' ');
@@ -101,6 +112,7 @@ void IndexerPreparator::Prepare(nlohmann::json &obj, fs::path target,
 
     inc_stdafx = inc_base;
     inc_stdafx += headerBlocks->target.string();
+    inc_stdafx = escape_spaces(std::move(inc_stdafx));
 
     dir_stdafx = headerBlocks->target;
     dir_stdafx.remove_filename();
@@ -260,6 +272,7 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
       //for header need to remove PCH from base command
 	  std::string main_inc_pch(inc_base);
 	  main_inc_pch += inc_pch.string();
+          main_inc_pch = escape_spaces(std::move(main_inc_pch));
       do_process_header_remove_args(main_inc_pch, 0);
   }
 
@@ -274,6 +287,7 @@ void IndexerPreparator::process_header(HeaderBlocks::Header &h) {
 	  inc_a_file += ".ghost";
 	  inc_a = inc_base;
 	  inc_a += inc_a_file;
+          inc_a = escape_spaces(std::move(inc_a));
 
 	  do_process_header_add_dynamic_pch(inc_a_file, inc_stdafx);
 
