@@ -439,7 +439,7 @@ std::string find_real_name(fs::path p, std::string search)
               if (x.is_directory())
               {
                   auto iter = fs::directory_iterator(xp);
-                  iter->exists();
+                  (void)iter->exists();
               }
             }catch(...)
             {
